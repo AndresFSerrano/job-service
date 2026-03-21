@@ -1,0 +1,102 @@
+[tool.poetry]
+name = "job-service-server"
+version = "0.1.0"
+description = "Servidor de job_service para desarrollo y despliegue interno"
+authors = ["Andrés <andresfserrano1@gmail.com>"]
+packages = [{ include = "app" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115.0"
+uvicorn = { version = "^0.30.0", extras = ["standard"] }
+pydantic = "^2.8.0"
+pydantic-settings = "^2.3.0"
+persistence-kit = "2.0.0"
+jsonschema = "^4.25.0"
+httpx = "^0.28.1"
+inngest = { version = "^0.4.22", extras = ["connect"] }
+pyjwt = { version = "^2.10.1", extras = ["crypto"] }
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+pytest-asyncio = "^0.23.0"
+poethepoet = "^0.38.0"
+
+[tool.poe.tasks]
+test = "poetry run pytest"
+
+[tool.poe.tasks.install]
+help = "Instala dependencias principales y de desarrollo."
+cmd = "poetry install --with dev"
+
+[tool.poe.tasks.docker-up]
+help = "Levanta contenedores con -d por defecto; usa --f para foreground/logs."
+args = [
+  { name = "f", options = ["--f"], type = "boolean", default = false },
+  { name = "replicas", options = ["--replicas"], type = "integer", default = 1 },
+]
+control = { expr = "${f}" }
+switch = [
+  { case = "True", sequence = [
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin up -d" },
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml up --scale job-service=${replicas}" },
+  ] },
+  { sequence = [
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin up -d" },
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml up -d --scale job-service=${replicas}" },
+  ] },
+]
+
+[tool.poe.tasks.docker-down]
+help = "Baja contenedores; usa --HARD para borrar volúmenes."
+args = [{ name = "hard", options = ["--HARD", "--hard"], type = "boolean", default = false }]
+control = { expr = "${hard}" }
+switch = [
+  { case = "True", sequence = [
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml down --volumes --remove-orphans" },
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin down --volumes --remove-orphans" },
+  ] },
+  { sequence = [
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml down --remove-orphans" },
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin down --remove-orphans" },
+  ] },
+]
+
+[tool.poe.tasks.docker-restart]
+help = "Rolling restart: down y up. --HARD borra volúmenes; --f deja logs en foreground."
+args = [
+  { name = "hard", options = ["--HARD", "--hard"], type = "boolean", default = false },
+  { name = "f", options = ["--f"], type = "boolean", default = false },
+  { name = "replicas", options = ["--replicas"], type = "integer", default = 1 },
+]
+control = { expr = "${hard} + ':' + ${f}" }
+switch = [
+  { case = "True:True", sequence = [
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml down --volumes --remove-orphans" },
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin down --volumes --remove-orphans" },
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin up -d" },
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml up --scale job-service=${replicas}" },
+  ] },
+  { case = "True:False", sequence = [
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml down --volumes --remove-orphans" },
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin down --volumes --remove-orphans" },
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin up -d" },
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml up -d --scale job-service=${replicas}" },
+  ] },
+  { case = "False:True", sequence = [
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml down --remove-orphans" },
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin down --remove-orphans" },
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin up -d" },
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml up --scale job-service=${replicas}" },
+  ] },
+  { sequence = [
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml down --remove-orphans" },
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin down --remove-orphans" },
+    { cmd = "docker compose --env-file .env -p job-service-db -f infra/compose/docker-compose.db.yml --profile pgadmin up -d" },
+    { cmd = "docker compose --env-file .env -p job-service-app -f infra/compose/docker-compose.app.yml up -d --scale job-service=${replicas}" },
+  ] },
+]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
