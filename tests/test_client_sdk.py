@@ -6,8 +6,8 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 
-from job_service.client import JobDefinitionConfig, JobServiceClient, JobServiceError
-from job_service.registration import (
+from job_service_sdk.client import JobDefinitionConfig, JobServiceClient, JobServiceError
+from job_service_sdk.registration import (
     JobServiceProvider,
     bootstrap_job_service_provider,
     build_service_client_config,

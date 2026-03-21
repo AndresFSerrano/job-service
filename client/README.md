@@ -13,13 +13,13 @@ Este paquete permite:
 ## Instalación
 
 ```bash
-pip install job-service
+pip install job-service-sdk
 ```
 
 ## API pública principal
 
 ```python
-from job_service import (
+from job_service_sdk import (
     JobClientConfig,
     JobDefinitionConfig,
     JobServiceClient,
@@ -39,7 +39,7 @@ from job_service import (
 ## Registrar un servicio y sus jobs
 
 ```python
-from job_service import JobClientConfig, JobDefinitionConfig, JobServiceClient
+from job_service_sdk import JobClientConfig, JobDefinitionConfig, JobServiceClient
 
 client = JobServiceClient("http://localhost:8001")
 
@@ -63,7 +63,7 @@ client.register_service(
 ## Crear una ejecución
 
 ```python
-from job_service import JobServiceClient
+from job_service_sdk import JobServiceClient
 
 client = JobServiceClient("http://localhost:8001")
 
@@ -80,7 +80,7 @@ execution = client.create_execution(
 ```python
 from uuid import UUID
 
-from job_service import JobServiceClient
+from job_service_sdk import JobServiceClient
 
 client = JobServiceClient("http://localhost:8001")
 job_id = UUID("00000000-0000-0000-0000-000000000001")
@@ -102,7 +102,7 @@ client.complete_execution(
 ## Flow declarativo
 
 ```python
-from job_service import JobFlow, job_flow
+from job_service_sdk import JobFlow, job_flow
 
 
 @job_flow(
@@ -118,7 +118,7 @@ def build_sample_flow() -> JobFlow:
 ## Worker local
 
 ```python
-from job_service import JobServiceClient, JobWorker, handler
+from job_service_sdk import JobServiceClient, JobWorker, handler
 
 
 @handler("sample_job")
@@ -135,7 +135,7 @@ worker = JobWorker(client)
 El paquete incluye helpers para levantar el runtime configurado a partir de `settings` y definiciones ya registradas.
 
 ```python
-from job_service import (
+from job_service_sdk import (
     initialize_job_service_provider_from_settings,
     start_job_runtime_from_settings,
     stop_job_runtime_from_settings,

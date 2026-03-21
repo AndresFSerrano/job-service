@@ -1,12 +1,12 @@
 [tool.poetry]
-name = "job-service"
+name = "job-service-sdk"
 version = "1.0.0"
 description = "Cliente y runtime para integrarse con job_service"
 authors = ["Andrés <andresfserrano1@gmail.com>"]
 readme = "README.md"
 license = "MIT"
-packages = [{ include = "job_service", from = "src" }]
-include = [{ path = "src/job_service/py.typed", format = ["sdist", "wheel"] }]
+packages = [{ include = "job_service_sdk", from = "src" }]
+include = [{ path = "src/job_service_sdk/py.typed", format = ["sdist", "wheel"] }]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",

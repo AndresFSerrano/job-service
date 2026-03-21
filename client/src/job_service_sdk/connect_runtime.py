@@ -5,8 +5,8 @@ from typing import Any
 
 import inngest
 
-from job_service.jobs import build_inngest_functions
-from job_service.registration import get_job_service_provider
+from job_service_sdk.jobs import build_inngest_functions
+from job_service_sdk.registration import get_job_service_provider
 
 _inngest_clients: dict[str, inngest.Inngest] = {}
 _workers: dict[str, Any] = {}

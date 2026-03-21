@@ -4,7 +4,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from job_service.client import (
+from job_service_sdk.client import (
     JobClientConfig,
     JobDefinitionConfig,
     JobServiceClient,

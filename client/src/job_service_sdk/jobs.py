@@ -9,7 +9,7 @@ import time
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from job_service.client import JobDefinitionConfig, JobServiceClient, JobServiceError
+from job_service_sdk.client import JobDefinitionConfig, JobServiceClient, JobServiceError
 
 if TYPE_CHECKING:
     import inngest

@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 from uuid import UUID
 
-from job_service.client import JobServiceClient
+from job_service_sdk.client import JobServiceClient
 
 logger = logging.getLogger(__name__)
 

@@ -22,7 +22,7 @@ from app.domain.entities.enums.job_execution_status import JobExecutionStatus
 from app.domain.security.authenticated_user import AuthenticatedUser
 from app.domain.security.roles import Role
 from app.infrastructure.security.authorization import get_current_user
-from job_service.client import JobServiceClient
+from job_service_sdk.client import JobServiceClient
 
 T = TypeVar("T")
 

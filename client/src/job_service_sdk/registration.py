@@ -4,7 +4,7 @@ import importlib
 from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
 
-from job_service.client import JobClientConfig, JobDefinitionConfig, JobServiceClient, JobServiceError
+from job_service_sdk.client import JobClientConfig, JobDefinitionConfig, JobServiceClient, JobServiceError
 
 
 @dataclass(slots=True)
@@ -132,7 +132,7 @@ def initialize_job_service_provider_from_settings(
         return existing
 
     importlib.import_module(definitions_module)
-    from job_service.jobs import build_job_definition_configs
+    from job_service_sdk.jobs import build_job_definition_configs
 
     provider = bootstrap_job_service_provider(
         job_service_url=getattr(settings, "job_service_url", None),

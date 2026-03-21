@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from job_service.connect_runtime import (
+from job_service_sdk.connect_runtime import (
     start_job_runtime_from_settings,
     stop_job_runtime_from_settings,
 )
@@ -17,7 +17,7 @@ async def test_start_job_runtime_from_settings_defaults_to_inngest(monkeypatch):
         return {"definitions_module": definitions_module}
 
     monkeypatch.setattr(
-        "job_service.connect_runtime.start_inngest_connect_worker_from_settings",
+        "job_service_sdk.connect_runtime.start_inngest_connect_worker_from_settings",
         fake_start,
     )
 
@@ -37,7 +37,7 @@ async def test_stop_job_runtime_from_settings_defaults_to_inngest(monkeypatch):
     async def fake_stop(app_id: str):
         called["app_id"] = app_id
 
-    monkeypatch.setattr("job_service.connect_runtime.stop_inngest_connect_worker", fake_stop)
+    monkeypatch.setattr("job_service_sdk.connect_runtime.stop_inngest_connect_worker", fake_stop)
 
     await stop_job_runtime_from_settings(
         SimpleNamespace(service_name="sample-service"),
