@@ -10,6 +10,7 @@ from starlette.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.infrastructure.repository_factory.register_defaults import register_defaults
 from app.infrastructure.routes import router as api_router
+from app.infrastructure.routes.health_router import router as health_router
 from app.workers.inngest_dispatcher import InngestJobDispatcher, set_dispatcher
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ app = FastAPI(
 )
 
 app.include_router(api_router)
+app.include_router(health_router)
 
 cors_origins = settings.cors_origins or []
 app.add_middleware(
