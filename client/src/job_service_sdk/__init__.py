@@ -17,6 +17,11 @@ from job_service_sdk.registration import (
 )
 from job_service_sdk.workers import JobWorker, handler, handler_registry
 
+
+def build_job_proxy_router(*args, **kwargs):
+    from job_service_sdk.proxy import build_job_proxy_router as _build
+    return _build(*args, **kwargs)
+
 __all__ = [
     "JobDefinitionConfig",
     "JobClientConfig",
@@ -40,6 +45,7 @@ __all__ = [
     "initialize_job_service_provider_from_settings",
     "get_job_service_provider",
     "job_flow",
+    "build_job_proxy_router",
     "JobWorker",
     "handler",
     "handler_registry",

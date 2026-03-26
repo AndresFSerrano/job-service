@@ -1,0 +1,135 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - develop
+      - production
+
+  workflow_dispatch:
+    inputs:
+      user:
+        description: "Deploy user suffix (e.g. aserrano)"
+        required: true
+      stage:
+        description: "Target stage"
+        required: true
+        default: "local"
+        type: choice
+        options:
+          - local
+
+env:
+  SERVICE_NAME: job-service
+  DOCKERFILE: Dockerfile
+  CONTAINER_PORT: "8001"
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ github.event_name == 'workflow_dispatch' && format('local-{0}', inputs.user) || github.ref_name }}
+      cancel-in-progress: false
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Resolve environment
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            STAGE="${{ inputs.stage }}"
+            DEPLOY_USER="${{ inputs.user }}"
+            STACK_PREFIX="platform-stack-${STAGE}-${DEPLOY_USER}"
+          elif [ "${{ github.ref_name }}" = "production" ]; then
+            STAGE="production"
+            STACK_PREFIX="platform-stack-${STAGE}"
+          elif [ "${{ github.ref_name }}" = "develop" ]; then
+            STAGE="dev"
+            STACK_PREFIX="platform-stack-${STAGE}"
+          else
+            echo "Unsupported ref: ${{ github.ref_name }}"
+            exit 1
+          fi
+
+          if [ "$STAGE" = "production" ]; then
+            ROLE_ARN="${{ secrets.AWS_ROLE_PRODUCTION_ARN }}"
+          else
+            ROLE_ARN="${{ secrets.AWS_ROLE_DEV_ARN }}"
+          fi
+
+          if [ -z "$ROLE_ARN" ]; then
+            echo "Missing AWS role secret for stage=$STAGE"
+            exit 1
+          fi
+
+          AWS_REGION="${{ vars.AWS_REGION }}"
+          AWS_REGION="${AWS_REGION:-us-east-1}"
+
+          ECR_REPO="${STACK_PREFIX}/${SERVICE_NAME}"
+          ECS_CLUSTER="${STACK_PREFIX}-cluster"
+          ECS_SERVICE_LOOKUP="${SERVICE_NAME}"
+
+          echo "STAGE=$STAGE" >> "$GITHUB_ENV"
+          echo "AWS_ROLE_ARN=$ROLE_ARN" >> "$GITHUB_ENV"
+          echo "AWS_REGION=$AWS_REGION" >> "$GITHUB_ENV"
+          echo "ECR_REPO=$ECR_REPO" >> "$GITHUB_ENV"
+          echo "ECS_CLUSTER=$ECS_CLUSTER" >> "$GITHUB_ENV"
+          echo "ECS_SERVICE_LOOKUP=$ECS_SERVICE_LOOKUP" >> "$GITHUB_ENV"
+          echo "STACK_PREFIX=$STACK_PREFIX" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          FULL_IMAGE="${REGISTRY}/${ECR_REPO}"
+          docker build -t "${FULL_IMAGE}:${IMAGE_TAG}" -t "${FULL_IMAGE}:latest" -f ${{ env.DOCKERFILE }} .
+          docker push "${FULL_IMAGE}:${IMAGE_TAG}"
+          docker push "${FULL_IMAGE}:latest"
+
+      - name: Resolve ECS service name
+        run: |
+          ECS_SERVICE=$(aws ecs list-services --cluster "${ECS_CLUSTER}" --query "serviceArns[?contains(@, '${ECS_SERVICE_LOOKUP}')]" --output text | head -1 | xargs -I{} basename {})
+          if [ -z "$ECS_SERVICE" ]; then
+            echo "ECS service containing '${ECS_SERVICE_LOOKUP}' not found in cluster ${ECS_CLUSTER}"
+            exit 1
+          fi
+          echo "ECS_SERVICE=$ECS_SERVICE" >> "$GITHUB_ENV"
+
+      - name: Run database migration
+        run: |
+          TASK_DEF=$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" --query "services[0].taskDefinition" --output text)
+          NETWORK_CONFIG=$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" --query "services[0].networkConfiguration" --output json)
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${ECS_CLUSTER}" \
+            --task-definition "${TASK_DEF}" \
+            --network-configuration "${NETWORK_CONFIG}" \
+            --launch-type FARGATE \
+            --overrides '{"containerOverrides":[{"name":"Main","command":["poetry","run","db-migration-kit","upgrade"]}]}' \
+            --query "tasks[0].taskArn" --output text)
+          echo "Migration task: ${TASK_ARN}"
+          aws ecs wait tasks-stopped --cluster "${ECS_CLUSTER}" --tasks "${TASK_ARN}"
+          EXIT_CODE=$(aws ecs describe-tasks --cluster "${ECS_CLUSTER}" --tasks "${TASK_ARN}" --query "tasks[0].containers[0].exitCode" --output text)
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Migration failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+
+      - name: Update ECS service
+        run: |
+          aws ecs update-service --cluster "${ECS_CLUSTER}" --service "${ECS_SERVICE}" --force-new-deployment --desired-count 1
+          aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"

@@ -28,10 +28,15 @@ python = "^3.11"
 httpx = "^0.28.1"
 jsonschema = "^4.25.0"
 inngest = { version = "^0.4.22", extras = ["connect"] }
+fastapi = { version = "^0.115.0", optional = true }
+
+[tool.poetry.extras]
+proxy = ["fastapi"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.2"
 pytest-asyncio = "^1.2.0"
+fastapi = "^0.115.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
