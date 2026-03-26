@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "job-service-sdk"
-version = "1.0.0"
+version = "2.0.1"
 description = "Cliente y runtime para integrarse con job_service"
 authors = ["Andrés <andresfserrano1@gmail.com>"]
 readme = "README.md"
