@@ -25,6 +25,8 @@ class Settings(RepoSettings):
     inngest_dev: str | None = None
     inngest_base_url: str | None = None
     inngest_public_url: str | None = None
+    job_dispatch_stale_timeout_seconds: int = 300
+    job_dispatch_reconcile_interval_seconds: int = 30
     api_path_prefix: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

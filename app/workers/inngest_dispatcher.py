@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
@@ -15,8 +18,9 @@ from app.application.use_cases.job_execution_use_cases import (
     update_job_execution as update_job_execution_use_case,
 )
 from app.core.config import Settings
-from app.core.time import now_bogota_iso
+from app.core.time import now_bogota_iso, parse_iso_datetime
 from app.domain.entities.enums.job_execution_status import JobExecutionStatus
+from app.domain.entities.job_definition import JobDefinition
 from app.domain.entities.job_execution import JobExecution
 
 logger = logging.getLogger(__name__)
@@ -28,22 +32,36 @@ class InngestJobDispatcher:
     def __init__(
         self,
         settings: Settings,
+        *,
+        execution_repo=None,
+        definition_repo=None,
+        client_repo=None,
+        event_repo=None,
     ) -> None:
         self._inngest: Any | None = None
         self._app_id = settings.service_name
-        self._execution_repo = get_repo("job_execution")
-        self._definition_repo = get_repo("job_definition")
-        self._client_repo = get_repo("job_client")
-        self._event_repo = get_repo("job_event")
+        self._execution_repo = execution_repo or get_repo("job_execution")
+        self._definition_repo = definition_repo or get_repo("job_definition")
+        self._client_repo = client_repo or get_repo("job_client")
+        self._event_repo = event_repo or get_repo("job_event")
+        self._stale_timeout_seconds = max(1, int(settings.job_dispatch_stale_timeout_seconds))
+        self._reconcile_interval_seconds = max(1, int(settings.job_dispatch_reconcile_interval_seconds))
+        self._reconcile_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         if self._inngest is None:
             import inngest
 
             self._inngest = inngest.Inngest(app_id=self._app_id)
+        if self._reconcile_task is None or self._reconcile_task.done():
+            self._reconcile_task = asyncio.create_task(self._reconcile_stale_dispatches())
 
     async def stop(self) -> None:
-        return None
+        if self._reconcile_task is not None:
+            self._reconcile_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._reconcile_task
+            self._reconcile_task = None
 
     async def dispatch_execution(self, job_id: UUID) -> None:
         execution = await get_job_execution_use_case(self._execution_repo, job_id)
@@ -129,9 +147,80 @@ class InngestJobDispatcher:
                 job_id,
                 JobExecutionUpdate(
                     status=JobExecutionStatus.FAILED,
+                    error_code="inngest_dispatch_error",
                     error_message=f"No se pudo despachar a Inngest: {exc}",
                 ),
             )
+
+    async def _reconcile_stale_dispatches(self) -> None:
+        while True:
+            await self._fail_stale_dispatches()
+            await asyncio.sleep(self._reconcile_interval_seconds)
+
+    async def _fail_stale_dispatches(self) -> None:
+        now_dt = parse_iso_datetime(now_bogota_iso())
+        if now_dt is None:
+            return
+        stale_before = now_dt - timedelta(seconds=self._stale_timeout_seconds)
+        definition_cache: dict[UUID, JobDefinition | None] = {}
+        for status_value in (JobExecutionStatus.QUEUED, JobExecutionStatus.RUNNING):
+            executions = await self._execution_repo.list_by_fields({"status": status_value}, limit=200)
+            for execution in executions:
+                if execution.inngest_run_id or execution.finished_at:
+                    continue
+                definition = await self._get_definition(definition_cache, execution.job_definition_id)
+                if definition is None or definition.execution_engine != "inngest":
+                    continue
+                last_activity = self._get_last_activity_at(execution)
+                if last_activity is None or last_activity > stale_before:
+                    continue
+                await update_job_execution_use_case(
+                    self._execution_repo,
+                    execution.id,
+                    JobExecutionUpdate(
+                        status=JobExecutionStatus.FAILED,
+                        error_code="inngest_dispatch_timeout",
+                        error_message=(
+                            f"No se recibio confirmacion de Inngest en "
+                            f"{self._stale_timeout_seconds} segundos."
+                        ),
+                    ),
+                )
+                await add_job_event(
+                    self._event_repo,
+                    execution.id,
+                    JobEventCreate(
+                        event_type="dispatch_timeout",
+                        message="Job marcado como fallido por timeout de despacho a Inngest",
+                        level="error",
+                        data={
+                            "timeout_seconds": self._stale_timeout_seconds,
+                            "last_activity_at": last_activity.isoformat(),
+                            "previous_status": execution.status.value,
+                        },
+                    ),
+                )
+
+    async def _get_definition(
+        self,
+        cache: dict[UUID, JobDefinition | None],
+        definition_id: UUID,
+    ) -> JobDefinition | None:
+        if definition_id not in cache:
+            cache[definition_id] = await self._definition_repo.get(definition_id)
+        return cache[definition_id]
+
+    def _get_last_activity_at(self, execution: JobExecution):
+        for value in (
+            execution.updated_at,
+            execution.started_at,
+            execution.queued_at,
+            execution.created_at,
+        ):
+            parsed = parse_iso_datetime(value)
+            if parsed is not None:
+                return parsed
+        return None
 
     async def _resolve_execution_endpoint(self, client_key: str) -> str | None:
         clients = await self._client_repo.list_by_fields({"client_key": client_key}, limit=1)

@@ -11,3 +11,15 @@ except ZoneInfoNotFoundError:
 
 def now_bogota_iso() -> str:
     return datetime.now(BOGOTA_TZ).isoformat()
+
+
+def parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=BOGOTA_TZ)
+    return parsed
