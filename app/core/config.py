@@ -25,6 +25,7 @@ class Settings(RepoSettings):
     inngest_dev: str | None = None
     inngest_base_url: str | None = None
     inngest_public_url: str | None = None
+    api_path_prefix: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
