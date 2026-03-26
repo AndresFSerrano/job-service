@@ -26,20 +26,19 @@ env:
   CONTAINER_PORT: "8001"
 
 jobs:
-  prepare:
-    name: prepare
+  deploy:
+    name: deploy
     runs-on: ubuntu-latest
-    outputs:
-      should_deploy: ${{ steps.resolve.outputs.should_deploy }}
-      deploy_flag_name: ${{ steps.resolve.outputs.deploy_flag_name }}
-      stage: ${{ steps.resolve.outputs.stage }}
-      stack_prefix: ${{ steps.resolve.outputs.stack_prefix }}
-      aws_region: ${{ steps.resolve.outputs.aws_region }}
-      role_arn: ${{ steps.resolve.outputs.role_arn }}
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
+
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
-      - name: Resolve environment
-        id: resolve
+      - name: Resolve deploy configuration
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -63,17 +62,6 @@ jobs:
             exit 1
           fi
 
-          if [ "$STAGE" = "production" ]; then
-            ROLE_ARN="${{ secrets.AWS_ROLE_PRODUCTION_ARN }}"
-          else
-            ROLE_ARN="${{ secrets.AWS_ROLE_DEV_ARN }}"
-          fi
-
-          if [ -z "$ROLE_ARN" ]; then
-            echo "Missing AWS role secret for stage=$STAGE"
-            exit 1
-          fi
-
           AWS_REGION="${{ vars.AWS_REGION }}"
           AWS_REGION="${AWS_REGION:-us-east-1}"
 
@@ -84,44 +72,55 @@ jobs:
             fi
           fi
 
-          echo "should_deploy=$SHOULD_DEPLOY" >> "$GITHUB_OUTPUT"
-          echo "deploy_flag_name=$DEPLOY_FLAG_NAME" >> "$GITHUB_OUTPUT"
-          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
-          echo "stack_prefix=$STACK_PREFIX" >> "$GITHUB_OUTPUT"
-          echo "aws_region=$AWS_REGION" >> "$GITHUB_OUTPUT"
-          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "STAGE=$STAGE" >> "$GITHUB_ENV"
+          echo "STACK_PREFIX=$STACK_PREFIX" >> "$GITHUB_ENV"
+          echo "AWS_REGION=$AWS_REGION" >> "$GITHUB_ENV"
+          echo "SHOULD_DEPLOY=$SHOULD_DEPLOY" >> "$GITHUB_ENV"
+          echo "DEPLOY_FLAG_NAME=$DEPLOY_FLAG_NAME" >> "$GITHUB_ENV"
 
-  deploy:
-    name: deploy
-    runs-on: ubuntu-latest
-    needs: prepare
-    if: ${{ needs.prepare.outputs.should_deploy == 'true' }}
-    concurrency:
-      group: deploy-${{ needs.prepare.outputs.stack_prefix }}
-      cancel-in-progress: false
+      - name: Report bypass
+        if: env.SHOULD_DEPLOY != 'true'
+        run: echo "Bypass deploy for ${{ github.ref_name }} because ${DEPLOY_FLAG_NAME} is not true."
 
-    permissions:
-      contents: read
-      id-token: write
-
-    env:
-      STAGE: ${{ needs.prepare.outputs.stage }}
-      STACK_PREFIX: ${{ needs.prepare.outputs.stack_prefix }}
-      AWS_REGION: ${{ needs.prepare.outputs.aws_region }}
-      AWS_ROLE_ARN: ${{ needs.prepare.outputs.role_arn }}
-
-    steps:
       - uses: actions/checkout@v4
+        if: env.SHOULD_DEPLOY == 'true'
+
+      - name: Validate production role secret
+        if: env.SHOULD_DEPLOY == 'true' && env.STAGE == 'production'
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.AWS_ROLE_PRODUCTION_ARN }}" ]; then
+            echo "Missing AWS_ROLE_PRODUCTION_ARN"
+            exit 1
+          fi
+
+      - name: Validate dev role secret
+        if: env.SHOULD_DEPLOY == 'true' && env.STAGE != 'production'
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.AWS_ROLE_DEV_ARN }}" ]; then
+            echo "Missing AWS_ROLE_DEV_ARN"
+            exit 1
+          fi
 
       - uses: aws-actions/configure-aws-credentials@v4
+        if: env.SHOULD_DEPLOY == 'true' && env.STAGE == 'production'
         with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_PRODUCTION_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: env.SHOULD_DEPLOY == 'true' && env.STAGE != 'production'
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_DEV_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
+        if: env.SHOULD_DEPLOY == 'true'
         id: ecr
 
       - name: Build and push image
+        if: env.SHOULD_DEPLOY == 'true'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
@@ -133,6 +132,7 @@ jobs:
           docker push "${FULL_IMAGE}:latest"
 
       - name: Resolve ECS service name
+        if: env.SHOULD_DEPLOY == 'true'
         run: |
           ECS_CLUSTER="${STACK_PREFIX}-cluster"
           echo "ECS_CLUSTER=$ECS_CLUSTER" >> "$GITHUB_ENV"
@@ -145,16 +145,7 @@ jobs:
           fi
 
       - name: Update ECS service
-        if: env.ECS_SERVICE != ''
+        if: env.SHOULD_DEPLOY == 'true' && env.ECS_SERVICE != ''
         run: |
           aws ecs update-service --cluster "${ECS_CLUSTER}" --service "${ECS_SERVICE}" --force-new-deployment --desired-count 1
           aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"
-
-  skip-deploy:
-    name: skip deploy
-    runs-on: ubuntu-latest
-    needs: prepare
-    if: ${{ needs.prepare.outputs.should_deploy != 'true' }}
-    steps:
-      - name: Report bypass
-        run: echo "Bypass deploy for ${{ github.ref_name }} because ${{ needs.prepare.outputs.deploy_flag_name }} is not true."
