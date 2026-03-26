@@ -37,115 +37,54 @@ jobs:
       contents: read
       id-token: write
 
+    env:
+      STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || github.ref_name == 'production' && 'production' || github.ref_name == 'develop' && 'dev' || '' }}
+      STACK_PREFIX: ${{ github.event_name == 'workflow_dispatch' && format('platform-stack-{0}-{1}', inputs.stage, inputs.user) || github.ref_name == 'production' && 'platform-stack-production' || github.ref_name == 'develop' && 'platform-stack-dev' || '' }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AWS_ROLE_ARN: ${{ github.event_name != 'workflow_dispatch' && github.ref_name == 'production' && secrets.AWS_ROLE_PRODUCTION_ARN || secrets.AWS_ROLE_DEV_ARN }}
+      SHOULD_DEPLOY: ${{ github.event_name == 'workflow_dispatch' && 'true' || github.ref_name == 'production' && vars.DEPLOY_PROD == 'true' && 'true' || github.ref_name == 'develop' && vars.DEPLOY_DEV == 'true' && 'true' || 'false' }}
+      DEPLOY_FLAG_NAME: ${{ github.event_name == 'workflow_dispatch' && 'workflow_dispatch' || github.ref_name == 'production' && 'DEPLOY_PROD' || github.ref_name == 'develop' && 'DEPLOY_DEV' || 'unknown' }}
+
     steps:
-      - name: Resolve deploy configuration
+      - uses: actions/checkout@v4
+        if: env.SHOULD_DEPLOY == 'true'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: env.SHOULD_DEPLOY == 'true'
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            STAGE="${{ inputs.stage }}"
-            DEPLOY_USER="${{ inputs.user }}"
-            STACK_PREFIX="platform-stack-${STAGE}-${DEPLOY_USER}"
-            SHOULD_DEPLOY="true"
-            DEPLOY_FLAG_NAME="workflow_dispatch"
-          elif [ "${{ github.ref_name }}" = "production" ]; then
-            STAGE="production"
-            STACK_PREFIX="platform-stack-${STAGE}"
-            DEPLOY_ENABLED="${{ vars.DEPLOY_PROD }}"
-            DEPLOY_FLAG_NAME="DEPLOY_PROD"
-          elif [ "${{ github.ref_name }}" = "develop" ]; then
-            STAGE="dev"
-            STACK_PREFIX="platform-stack-${STAGE}"
-            DEPLOY_ENABLED="${{ vars.DEPLOY_DEV }}"
-            DEPLOY_FLAG_NAME="DEPLOY_DEV"
-          else
+          if [ "${SHOULD_DEPLOY}" != "true" ]; then
+            echo "Bypass deploy for ${{ github.ref_name }} because ${DEPLOY_FLAG_NAME} is not true."
+            exit 0
+          fi
+
+          if [ -z "${STACK_PREFIX}" ] || [ -z "${STAGE}" ]; then
             echo "Unsupported ref: ${{ github.ref_name }}"
             exit 1
           fi
 
-          AWS_REGION="${{ vars.AWS_REGION }}"
-          AWS_REGION="${AWS_REGION:-us-east-1}"
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${REGISTRY}"
 
-          if [ -z "$SHOULD_DEPLOY" ]; then
-            SHOULD_DEPLOY="false"
-            if [ "${DEPLOY_ENABLED,,}" = "true" ]; then
-              SHOULD_DEPLOY="true"
-            fi
-          fi
-
-          echo "STAGE=$STAGE" >> "$GITHUB_ENV"
-          echo "STACK_PREFIX=$STACK_PREFIX" >> "$GITHUB_ENV"
-          echo "AWS_REGION=$AWS_REGION" >> "$GITHUB_ENV"
-          echo "SHOULD_DEPLOY=$SHOULD_DEPLOY" >> "$GITHUB_ENV"
-          echo "DEPLOY_FLAG_NAME=$DEPLOY_FLAG_NAME" >> "$GITHUB_ENV"
-
-      - name: Report bypass
-        if: env.SHOULD_DEPLOY != 'true'
-        run: echo "Bypass deploy for ${{ github.ref_name }} because ${DEPLOY_FLAG_NAME} is not true."
-
-      - uses: actions/checkout@v4
-        if: env.SHOULD_DEPLOY == 'true'
-
-      - name: Validate production role secret
-        if: env.SHOULD_DEPLOY == 'true' && env.STAGE == 'production'
-        shell: bash
-        run: |
-          if [ -z "${{ secrets.AWS_ROLE_PRODUCTION_ARN }}" ]; then
-            echo "Missing AWS_ROLE_PRODUCTION_ARN"
-            exit 1
-          fi
-
-      - name: Validate dev role secret
-        if: env.SHOULD_DEPLOY == 'true' && env.STAGE != 'production'
-        shell: bash
-        run: |
-          if [ -z "${{ secrets.AWS_ROLE_DEV_ARN }}" ]; then
-            echo "Missing AWS_ROLE_DEV_ARN"
-            exit 1
-          fi
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        if: env.SHOULD_DEPLOY == 'true' && env.STAGE == 'production'
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_PRODUCTION_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        if: env.SHOULD_DEPLOY == 'true' && env.STAGE != 'production'
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_DEV_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - uses: aws-actions/amazon-ecr-login@v2
-        if: env.SHOULD_DEPLOY == 'true'
-        id: ecr
-
-      - name: Build and push image
-        if: env.SHOULD_DEPLOY == 'true'
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
+          IMAGE_TAG="${{ github.sha }}"
           ECR_REPO="${STACK_PREFIX}/${SERVICE_NAME}"
           FULL_IMAGE="${REGISTRY}/${ECR_REPO}"
           docker build -t "${FULL_IMAGE}:${IMAGE_TAG}" -t "${FULL_IMAGE}:latest" -f ${{ env.DOCKERFILE }} .
           docker push "${FULL_IMAGE}:${IMAGE_TAG}"
           docker push "${FULL_IMAGE}:latest"
-
-      - name: Resolve ECS service name
-        if: env.SHOULD_DEPLOY == 'true'
-        run: |
+ 
           ECS_CLUSTER="${STACK_PREFIX}-cluster"
-          echo "ECS_CLUSTER=$ECS_CLUSTER" >> "$GITHUB_ENV"
           ECS_SERVICE=$(aws ecs list-services --cluster "${ECS_CLUSTER}" --query "serviceArns[?contains(@, '${ECS_SERVICE_LOOKUP}')]" --output text | head -1 | xargs -I{} basename {})
           if [ -z "$ECS_SERVICE" ]; then
             echo "ECS service not found — image-only deploy (first run)"
-            echo "ECS_SERVICE=" >> "$GITHUB_ENV"
-          else
-            echo "ECS_SERVICE=$ECS_SERVICE" >> "$GITHUB_ENV"
+            exit 0
           fi
 
-      - name: Update ECS service
-        if: env.SHOULD_DEPLOY == 'true' && env.ECS_SERVICE != ''
-        run: |
           aws ecs update-service --cluster "${ECS_CLUSTER}" --service "${ECS_SERVICE}" --force-new-deployment --desired-count 1
           aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}"
