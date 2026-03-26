@@ -61,7 +61,8 @@ class JobServiceClient:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        self._client = http_client or HTTPClient(base_url=base_url, timeout=timeout, headers=headers)
+        normalized_base_url = base_url.rstrip("/") + "/"
+        self._client = http_client or HTTPClient(base_url=normalized_base_url, timeout=timeout, headers=headers)
         self._definitions: dict[tuple[str, str], RegisteredJobDefinition] = {}
 
     def register_client(self, client: JobClientConfig) -> dict[str, Any]:
@@ -306,7 +307,7 @@ class JobServiceClient:
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         try:
-            response = self._client.request(method, path, **kwargs)
+            response = self._client.request(method, path.lstrip("/"), **kwargs)
         except httpx.HTTPError as exc:
             raise JobServiceError(f"{method} {path} failed: {exc}") from exc
         if response.status_code >= 400:

@@ -9,8 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       user:
-        description: "Deploy user suffix (e.g. aserrano)"
-        required: true
+        description: "Deploy user suffix (e.g. aserrano) — requerido solo para stage local"
+        required: false
+        default: ""
       stage:
         description: "Target stage"
         required: true
@@ -18,6 +19,8 @@ on:
         type: choice
         options:
           - local
+          - dev
+          - production
 
 env:
   SERVICE_NAME: job-service
@@ -39,9 +42,9 @@ jobs:
 
     env:
       STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || github.ref_name == 'production' && 'production' || github.ref_name == 'develop' && 'dev' || '' }}
-      STACK_PREFIX: ${{ github.event_name == 'workflow_dispatch' && format('platform-stack-{0}-{1}', inputs.stage, inputs.user) || github.ref_name == 'production' && 'platform-stack-production' || github.ref_name == 'develop' && 'platform-stack-dev' || '' }}
+      STACK_PREFIX: ${{ github.event_name == 'workflow_dispatch' && inputs.user != '' && format('platform-stack-{0}-{1}', inputs.stage, inputs.user) || github.event_name == 'workflow_dispatch' && format('platform-stack-{0}', inputs.stage) || github.ref_name == 'production' && 'platform-stack-production' || github.ref_name == 'develop' && 'platform-stack-dev' || '' }}
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-      AWS_ROLE_ARN: ${{ github.event_name != 'workflow_dispatch' && github.ref_name == 'production' && secrets.AWS_ROLE_PRODUCTION_ARN || secrets.AWS_ROLE_DEV_ARN }}
+      AWS_ROLE_ARN: ${{ (github.event_name == 'workflow_dispatch' && inputs.stage == 'production' || github.ref_name == 'production') && secrets.AWS_ROLE_PRODUCTION_ARN || secrets.AWS_ROLE_DEV_ARN }}
       SHOULD_DEPLOY: ${{ github.event_name == 'workflow_dispatch' && 'true' || github.ref_name == 'production' && vars.DEPLOY_PROD == 'true' && 'true' || github.ref_name == 'develop' && vars.DEPLOY_DEV == 'true' && 'true' || 'false' }}
       DEPLOY_FLAG_NAME: ${{ github.event_name == 'workflow_dispatch' && 'workflow_dispatch' || github.ref_name == 'production' && 'DEPLOY_PROD' || github.ref_name == 'develop' && 'DEPLOY_DEV' || 'unknown' }}
 
