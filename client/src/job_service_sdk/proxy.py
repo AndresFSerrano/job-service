@@ -4,7 +4,7 @@ from typing import Callable
 
 import httpx
 from starlette.requests import Request
-from starlette.responses import Response, StreamingResponse
+from starlette.responses import JSONResponse, Response, StreamingResponse
 
 try:
     from fastapi import APIRouter, HTTPException, status
@@ -17,8 +17,18 @@ _client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
+        _client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=10.0),
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+        )
     return _client
+
+
+def _build_stream_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(None, connect=10.0),
+        limits=httpx.Limits(max_keepalive_connections=0, max_connections=1),
+    )
 
 
 def _forward_headers(request: Request) -> dict[str, str]:
@@ -35,6 +45,23 @@ def _build_response(response: httpx.Response) -> Response:
         content=response.content,
         status_code=response.status_code,
         headers={"content-type": response.headers.get("content-type", "application/json")},
+    )
+
+
+def _map_proxy_error(exc: httpx.HTTPError) -> JSONResponse:
+    if isinstance(exc, httpx.PoolTimeout):
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": "El proxy de jobs esta saturado temporalmente."},
+        )
+    if isinstance(exc, httpx.TimeoutException):
+        return JSONResponse(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            content={"detail": "El job service no respondio a tiempo."},
+        )
+    return JSONResponse(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        content={"detail": "No fue posible comunicarse con el job service."},
     )
 
 
@@ -67,7 +94,10 @@ def build_job_proxy_router(
         url = f"{base}/api/v1/job-executions"
         if request.url.query:
             url = f"{url}?{request.url.query}"
-        response = await _get_client().get(url, headers=_forward_headers(request))
+        try:
+            response = await _get_client().get(url, headers=_forward_headers(request))
+        except httpx.HTTPError as exc:
+            return _map_proxy_error(exc)
         return _build_response(response)
 
     @router.post("/executions", summary="Proxy: crear ejecución")
@@ -75,14 +105,20 @@ def build_job_proxy_router(
         base = _resolve_url()
         url = f"{base}/api/v1/job-executions"
         body = await request.body()
-        response = await _get_client().post(url, content=body, headers=_forward_headers(request))
+        try:
+            response = await _get_client().post(url, content=body, headers=_forward_headers(request))
+        except httpx.HTTPError as exc:
+            return _map_proxy_error(exc)
         return _build_response(response)
 
     @router.get("/executions/status-options", summary="Proxy: opciones de estado")
     async def proxy_status_options(request: Request) -> Response:
         base = _resolve_url()
         url = f"{base}/api/v1/job-executions/status-options"
-        response = await _get_client().get(url, headers=_forward_headers(request))
+        try:
+            response = await _get_client().get(url, headers=_forward_headers(request))
+        except httpx.HTTPError as exc:
+            return _map_proxy_error(exc)
         return _build_response(response)
 
     @router.get("/executions/requester-options", summary="Proxy: opciones de solicitante")
@@ -91,14 +127,20 @@ def build_job_proxy_router(
         url = f"{base}/api/v1/job-executions/requester-options"
         if request.url.query:
             url = f"{url}?{request.url.query}"
-        response = await _get_client().get(url, headers=_forward_headers(request))
+        try:
+            response = await _get_client().get(url, headers=_forward_headers(request))
+        except httpx.HTTPError as exc:
+            return _map_proxy_error(exc)
         return _build_response(response)
 
     @router.get("/executions/{execution_id}", summary="Proxy: obtener ejecución")
     async def proxy_get_execution(execution_id: str, request: Request) -> Response:
         base = _resolve_url()
         url = f"{base}/api/v1/job-executions/{execution_id}"
-        response = await _get_client().get(url, headers=_forward_headers(request))
+        try:
+            response = await _get_client().get(url, headers=_forward_headers(request))
+        except httpx.HTTPError as exc:
+            return _map_proxy_error(exc)
         return _build_response(response)
 
     @router.get("/executions/{execution_id}/stream", summary="Proxy: SSE stream de ejecución")
@@ -108,13 +150,17 @@ def build_job_proxy_router(
         headers = _forward_headers(request)
 
         async def _event_generator():
-            async with _get_client().stream("GET", url, headers=headers) as response:
-                if response.status_code != 200:
-                    return
-                async for line in response.aiter_lines():
-                    if await request.is_disconnected():
-                        break
-                    yield f"{line}\n"
+            try:
+                async with _build_stream_client() as stream_client:
+                    async with stream_client.stream("GET", url, headers=headers) as response:
+                        if response.status_code != 200:
+                            return
+                        async for line in response.aiter_lines():
+                            if await request.is_disconnected():
+                                break
+                            yield f"{line}\n"
+            except httpx.HTTPError:
+                return
 
         return StreamingResponse(
             _event_generator(),
