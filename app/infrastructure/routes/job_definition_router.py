@@ -12,6 +12,10 @@ from app.application.use_cases.job_definition_use_cases import (
     register_job_definition as register_job_definition_use_case,
 )
 from app.domain.entities.job_definition import JobDefinition
+from app.infrastructure.security.authorization import (
+    RequestPrincipal,
+    require_admin_or_service_principal,
+)
 
 
 JobDefinitionRepoDep = Annotated[Repository[JobDefinition, UUID], Depends(provide_repo("job_definition"))]
@@ -28,6 +32,7 @@ router = APIRouter(prefix="/job-definitions", tags=["Job Definitions"])
 async def register_job_definition(
     payload: JobDefinitionCreate,
     repo: JobDefinitionRepoDep,
+    principal: RequestPrincipal = Depends(require_admin_or_service_principal),
 ):
     try:
         definition = await register_job_definition_use_case(repo, payload)
@@ -45,6 +50,7 @@ async def register_job_definition(
 async def list_job_definitions(
     repo: JobDefinitionRepoDep,
     client_key: str | None = Query(default=None),
+    principal: RequestPrincipal = Depends(require_admin_or_service_principal),
 ):
     definitions = await list_job_definitions_use_case(repo, client_key=client_key)
     return [_serialize_job_definition(definition) for definition in definitions]

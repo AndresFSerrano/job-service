@@ -13,6 +13,12 @@ from app.application.use_cases.job_event_use_cases import (
 )
 from app.domain.entities.job_event import JobEvent
 from app.domain.entities.job_execution import JobExecution
+from app.infrastructure.security.authorization import (
+    RequestPrincipal,
+    ensure_principal_can_access_execution,
+    get_request_principal,
+    require_service_principal,
+)
 
 
 JobExecutionRepoDep = Annotated[Repository[JobExecution, UUID], Depends(provide_repo("job_execution"))]
@@ -32,6 +38,7 @@ async def add_event(
     payload: JobEventCreate,
     event_repo: JobEventRepoDep,
     job_repo: JobExecutionRepoDep,
+    service_principal=Depends(require_service_principal),
 ):
     execution = await job_repo.get(job_id)
     if execution is None:
@@ -50,7 +57,13 @@ async def add_event(
 async def list_events(
     job_id: UUID,
     event_repo: JobEventRepoDep,
+    job_repo: JobExecutionRepoDep,
+    principal: RequestPrincipal = Depends(get_request_principal),
 ):
+    execution = await job_repo.get(job_id)
+    if execution is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job execution not found")
+    ensure_principal_can_access_execution(principal, execution.requested_by_id)
     events = await list_job_events_use_case(event_repo, job_id)
     return [_serialize_job_event(event) for event in events]
 

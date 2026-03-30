@@ -33,8 +33,13 @@ from app.domain.entities.job_event import JobEvent
 from app.domain.entities.job_execution import JobExecution
 from app.domain.security.authenticated_user import AuthenticatedUser
 from app.infrastructure.security.authorization import (
+    RequestPrincipal,
+    ServicePrincipal,
+    ensure_principal_can_access_execution,
     ensure_user_can_access_manager_type,
     get_current_user,
+    get_request_principal,
+    require_service_principal,
 )
 from app.realtime.job_execution_stream import serialize_job_execution, stream_events
 from app.workers.inngest_dispatcher import get_dispatcher
@@ -60,19 +65,31 @@ async def create_job_execution(
     payload: JobExecutionCreate,
     job_execution_repo: JobExecutionRepoDep,
     definition_repo: JobDefinitionRepoDep,
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    principal: RequestPrincipal = Depends(get_request_principal),
     settings: Settings = Depends(get_settings),
 ):
     try:
         job_input = dict(payload.job_input or {})
-        manager_type = job_input.get("manager_type")
-        ensure_user_can_access_manager_type(current_user, str(manager_type) if manager_type is not None else None)
-        if settings.auth_enabled:
+        if not isinstance(principal, ServicePrincipal):
+            manager_type = job_input.get("manager_type")
+            ensure_user_can_access_manager_type(
+                principal,
+                str(manager_type) if manager_type is not None else None,
+            )
+            if settings.auth_enabled:
+                payload = payload.model_copy(
+                    update={
+                        "requested_by_type": "user",
+                        "requested_by_id": principal.username,
+                        "requested_by_display": principal.email or principal.username,
+                    }
+                )
+        elif not payload.requested_by_id:
             payload = payload.model_copy(
                 update={
-                    "requested_by_type": "user",
-                    "requested_by_id": current_user.username,
-                    "requested_by_display": current_user.email or current_user.username,
+                    "requested_by_type": "service",
+                    "requested_by_id": principal.username,
+                    "requested_by_display": principal.username,
                 }
             )
         execution = await create_job_execution_use_case(job_execution_repo, definition_repo, payload)
@@ -92,7 +109,9 @@ async def create_job_execution(
     status_code=status.HTTP_200_OK,
     summary="Listar estados válidos de ejecución",
 )
-async def list_job_execution_statuses():
+async def list_job_execution_statuses(
+    current_user=Depends(get_current_user),
+):
     return await list_job_execution_statuses_use_case()
 
 
@@ -131,9 +150,11 @@ async def list_job_executions(
     status: list[str] | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    principal: RequestPrincipal = Depends(get_request_principal),
 ):
-    effective_requested_by_id = requested_by_id if current_user.is_admin_general else current_user.username
+    effective_requested_by_id = requested_by_id
+    if not isinstance(principal, ServicePrincipal) and not principal.is_admin_general:
+        effective_requested_by_id = principal.username
     executions, total = await list_job_executions_use_case(
         job_execution_repo,
         client_key=client_key,
@@ -161,13 +182,12 @@ async def list_job_executions(
 async def get_job_execution(
     job_ref: str,
     job_execution_repo: JobExecutionRepoDep,
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     execution = await get_job_execution_by_ref_use_case(job_execution_repo, job_ref)
     if execution is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job execution not found")
-    if not current_user.is_admin_general and execution.requested_by_id != current_user.username:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tiene permisos para consultar esta ejecución.")
+    ensure_principal_can_access_execution(current_user, execution.requested_by_id)
     return _serialize_job_execution(execution)
 
 
@@ -180,13 +200,12 @@ async def stream_job_execution(
     job_ref: str,
     request: Request,
     job_execution_repo: JobExecutionRepoDep,
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     execution = await get_job_execution_by_ref_use_case(job_execution_repo, job_ref)
     if execution is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job execution not found")
-    if not current_user.is_admin_general and execution.requested_by_id != current_user.username:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tiene permisos para consultar esta ejecución.")
+    ensure_principal_can_access_execution(current_user, execution.requested_by_id)
 
     async def _event_generator():
         async for chunk in stream_events(execution.id, initial_execution=execution):
@@ -215,12 +234,13 @@ async def update_job_execution(
     job_id: UUID,
     payload: JobExecutionUpdate,
     job_execution_repo: JobExecutionRepoDep,
+    service_principal=Depends(require_service_principal),
 ):
     try:
         execution = await update_job_execution_use_case(job_execution_repo, job_id, payload)
         return _serialize_job_execution(execution)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job execution not found")
 
 
 @router.post(
@@ -234,6 +254,7 @@ async def checkpoint_job_execution(
     payload: JobCheckpointCreate,
     job_execution_repo: JobExecutionRepoDep,
     event_repo: JobEventRepoDep,
+    service_principal=Depends(require_service_principal),
 ):
     execution = await get_job_execution_use_case(job_execution_repo, job_id)
     if execution is None:

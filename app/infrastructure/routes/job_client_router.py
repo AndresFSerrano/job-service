@@ -19,6 +19,10 @@ from app.application.use_cases.job_client_use_cases import (
 )
 from app.domain.entities.job_client import JobClient
 from app.domain.entities.job_definition import JobDefinition
+from app.infrastructure.security.authorization import (
+    RequestPrincipal,
+    require_admin_or_service_principal,
+)
 
 
 JobClientRepoDep = Annotated[Repository[JobClient, UUID], Depends(provide_repo("job_client"))]
@@ -39,6 +43,7 @@ router = APIRouter(prefix="/job-clients", tags=["Job Clients"])
 async def register_job_client(
     payload: JobClientCreate,
     repo: JobClientRepoDep,
+    principal: RequestPrincipal = Depends(require_admin_or_service_principal),
 ):
     client = await register_job_client_use_case(repo, payload)
     return _serialize_job_client(client)
@@ -52,6 +57,7 @@ async def register_job_client(
 )
 async def list_job_clients(
     repo: JobClientRepoDep,
+    principal: RequestPrincipal = Depends(require_admin_or_service_principal),
 ):
     clients = await list_job_clients_use_case(repo)
     return [_serialize_job_client(client) for client in clients]
@@ -67,6 +73,7 @@ async def register_service_manifest_route(
     payload: ServiceRegistrationCreate,
     client_repo: JobClientRepoDep,
     definition_repo: JobDefinitionRepoDep,
+    principal: RequestPrincipal = Depends(require_admin_or_service_principal),
 ):
     try:
         client, definitions = await register_service_manifest_use_case(client_repo, definition_repo, payload)

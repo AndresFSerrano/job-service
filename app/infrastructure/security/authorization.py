@@ -1,4 +1,6 @@
-from typing import Annotated, Any
+from dataclasses import dataclass
+from hmac import compare_digest
+from typing import Annotated, Any, TypeAlias
 
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -9,6 +11,16 @@ from app.domain.security.roles import Role
 from app.infrastructure.security.factory import get_token_verifier
 
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+@dataclass(frozen=True)
+class ServicePrincipal:
+    subject: str = "job-service-internal"
+    username: str = "job-service-internal"
+    email: str | None = None
+
+
+RequestPrincipal: TypeAlias = AuthenticatedUser | ServicePrincipal
 
 
 def _resolve_roles_from_claims(payload: dict[str, Any]) -> tuple[Role, ...]:
@@ -43,32 +55,120 @@ def _auth_disabled_fallback_user() -> AuthenticatedUser:
     )
 
 
-async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
-    request: Request,
-    settings: Settings = Depends(get_settings),
-) -> AuthenticatedUser:
-    if not settings.auth_enabled:
-        user = _auth_disabled_fallback_user()
-        request.state.auth_user = user
-        return user
-
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No tiene permisos para acceder a este recurso.",
-        )
-
-    payload = get_token_verifier(settings).verify(credentials.credentials)
+def _build_user_from_payload(payload: dict[str, Any]) -> AuthenticatedUser:
     username = _resolve_username_from_claims(payload) or payload.get("sub", "")
-    user = AuthenticatedUser.from_values(
+    return AuthenticatedUser.from_values(
         subject=payload.get("sub", ""),
         username=username,
         email=payload.get("email"),
         roles=_resolve_roles_from_claims(payload),
     )
-    request.state.auth_user = user
-    return user
+
+
+def _store_request_principal(request: Request, principal: RequestPrincipal) -> None:
+    request.state.auth_principal = principal
+    request.state.auth_user = principal if isinstance(principal, AuthenticatedUser) else None
+
+
+def _matches_service_api_key(token: str, settings: Settings) -> bool:
+    return bool(settings.job_service_api_key) and compare_digest(token, settings.job_service_api_key)
+
+
+def _unauthorized_exception() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No tiene permisos para acceder a este recurso.",
+    )
+
+
+async def get_request_principal(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> RequestPrincipal:
+    if credentials is None:
+        if settings.is_local_stage and not settings.auth_enabled and settings.uses_local_default_job_service_api_key:
+            principal = _auth_disabled_fallback_user()
+            _store_request_principal(request, principal)
+            return principal
+        raise _unauthorized_exception()
+
+    token = credentials.credentials
+    if _matches_service_api_key(token, settings):
+        principal = ServicePrincipal()
+        _store_request_principal(request, principal)
+        return principal
+
+    if not settings.auth_enabled:
+        if settings.is_local_stage and settings.uses_local_default_job_service_api_key:
+            principal = _auth_disabled_fallback_user()
+            _store_request_principal(request, principal)
+            return principal
+        raise _unauthorized_exception()
+
+    principal = _build_user_from_payload(get_token_verifier(settings).verify(token))
+    _store_request_principal(request, principal)
+    return principal
+
+
+async def get_current_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> AuthenticatedUser:
+    principal = await get_request_principal(credentials, request, settings)
+    if isinstance(principal, ServicePrincipal):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requiere un token de usuario para acceder a este recurso.",
+        )
+    return principal
+
+
+async def require_service_principal(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> ServicePrincipal:
+    if settings.is_local_stage and not settings.auth_enabled and settings.uses_local_default_job_service_api_key:
+        principal = ServicePrincipal()
+        _store_request_principal(request, principal)
+        return principal
+    principal = await get_request_principal(credentials, request, settings)
+    if not isinstance(principal, ServicePrincipal):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requiere una credencial de servicio para acceder a este recurso.",
+        )
+    return principal
+
+
+async def require_admin_or_service_principal(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> RequestPrincipal:
+    principal = await get_request_principal(credentials, request, settings)
+    if isinstance(principal, ServicePrincipal) or principal.is_admin_general:
+        return principal
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No tiene permisos para acceder a este recurso.",
+    )
+
+
+def ensure_principal_can_access_execution(
+    principal: RequestPrincipal,
+    requested_by_id: str | None,
+) -> None:
+    if isinstance(principal, ServicePrincipal) or principal.is_admin_general:
+        return
+    if requested_by_id == principal.username:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No tiene permisos para consultar esta ejecución.",
+    )
 
 
 def ensure_user_can_access_manager_type(
