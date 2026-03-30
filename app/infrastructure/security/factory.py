@@ -6,9 +6,6 @@ from app.core.config import AuthProvider, Settings
 from app.infrastructure.security.token_verifiers.cognito_jwt_verifier import CognitoJwtVerifier
 from app.infrastructure.security.token_verifiers.memory_jwt_verifier import MemoryJwtVerifier
 
-MEMORY_JWT_SECRET = "memory-local-secret-not-for-production-12345"
-MEMORY_JWT_ISSUER = "memory-sandbox"
-
 
 @lru_cache
 def _memory_token_verifier(secret: str, issuer: str) -> MemoryJwtVerifier:
@@ -25,6 +22,11 @@ def _token_verifier_cached(
     memory_jwt_issuer: str,
 ):
     if provider == AuthProvider.MEMORY.value:
+        if not memory_jwt_secret:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Falta configuracion MEMORY_JWT_SECRET.",
+            )
         return _memory_token_verifier(memory_jwt_secret, memory_jwt_issuer)
     if provider == AuthProvider.COGNITO.value:
         if not cognito_user_pool_id:
@@ -49,6 +51,6 @@ def get_token_verifier(settings: Settings):
         settings.cognito_region,
         settings.cognito_user_pool_id or "",
         settings.cognito_app_client_id,
-        MEMORY_JWT_SECRET,
-        MEMORY_JWT_ISSUER,
+        settings.memory_jwt_secret or "",
+        settings.memory_jwt_issuer,
     )

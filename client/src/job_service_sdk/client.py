@@ -307,7 +307,7 @@ class JobServiceClient:
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         try:
-            response = self._client.request(method, path.lstrip("/"), **kwargs)
+            response = self._client.request(method, path, **kwargs)
         except httpx.HTTPError as exc:
             raise JobServiceError(f"{method} {path} failed: {exc}") from exc
         if response.status_code >= 400:
