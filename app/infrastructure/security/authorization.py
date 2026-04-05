@@ -180,7 +180,11 @@ def ensure_user_can_access_manager_type(
     normalized = manager_type.strip().upper()
     allowed_roles_by_manager = {
         "UCARA": {Role.ADMIN_GENERAL, Role.ADMIN_UCARA, Role.AUXILIAR_UCARA},
-        "ALMACEN": {Role.ADMIN_GENERAL, Role.ADMIN_ALMACEN, Role.AUXILIAR_ALMACEN},
+        "ALMACEN": {
+            Role.ADMIN_GENERAL,
+            Role.PROGRAMADOR_ALMACEN,
+            Role.AUXILIAR_ALMACEN,
+        },
     }
     allowed_roles = allowed_roles_by_manager.get(normalized, set())
     if set(current_user.roles).intersection(allowed_roles):
