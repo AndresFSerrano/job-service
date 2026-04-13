@@ -742,24 +742,35 @@ files = [
 
 [[package]]
 name = "persistence-kit"
-version = "3.0.1"
+version = "3.2.0"
 description = "Reusable persistence and repository toolkit"
 optional = false
 python-versions = "<4.0,>=3.11"
 groups = ["main"]
 files = [
-    {file = "persistence_kit-3.0.1-py3-none-any.whl", hash = "sha256:34d6aa0b672a428752b1850c31d404989acf6783480056347dca9a42c6648c8a"},
-    {file = "persistence_kit-3.0.1.tar.gz", hash = "sha256:de2cfe6afd5dd47205138e605730598723bb19bf919b3ed6dd9c5962f1f7d2de"},
+    {file = "persistence_kit-3.2.0-py3-none-any.whl", hash = "sha256:beaaf3714111649242f332ca81a15301cc62cfbb32d58a62a12a55db29567c00"},
+    {file = "persistence_kit-3.2.0.tar.gz", hash = "sha256:d68822485c5ee192f4022f2503ebcbfca4d93761a5080ab63f177b7ebda685d2"},
 ]
 
 [package.dependencies]
 asyncpg = ">=0.30.0,<0.31.0"
-boto3 = ">=1.35.0,<2.0.0"
-fastapi = ">=0.115.0,<0.116.0"
+boto3 = {version = ">=1.35.0,<2.0.0", optional = true, markers = "extra == \"storage-s3\" or extra == \"security-cognito\" or extra == \"dynamodb\" or extra == \"all\""}
+fastapi = {version = ">=0.115.0,<0.116.0", optional = true, markers = "extra == \"api\" or extra == \"storage-routes\" or extra == \"security\" or extra == \"security-cognito\" or extra == \"testing\" or extra == \"all\""}
 motor = ">=3.7.1,<4.0.0"
 pydantic-settings = ">=2.3.0,<3.0.0"
+pyjwt = {version = ">=2.10.1,<3.0.0", extras = ["crypto"], optional = true, markers = "extra == \"security\" or extra == \"security-cognito\" or extra == \"testing\" or extra == \"all\""}
 sqlalchemy = {version = ">=2.0.43,<3.0.0", extras = ["asyncio"]}
 typing-extensions = ">=4.12.0,<5.0.0"
+
+[package.extras]
+all = ["boto3 (>=1.35.0,<2.0.0)", "fastapi (>=0.115.0,<0.116.0)", "pyjwt[crypto] (>=2.10.1,<3.0.0)"]
+api = ["fastapi (>=0.115.0,<0.116.0)"]
+dynamodb = ["boto3 (>=1.35.0,<2.0.0)"]
+security = ["fastapi (>=0.115.0,<0.116.0)", "pyjwt[crypto] (>=2.10.1,<3.0.0)"]
+security-cognito = ["boto3 (>=1.35.0,<2.0.0)", "fastapi (>=0.115.0,<0.116.0)", "pyjwt[crypto] (>=2.10.1,<3.0.0)"]
+storage-routes = ["fastapi (>=0.115.0,<0.116.0)"]
+storage-s3 = ["boto3 (>=1.35.0,<2.0.0)"]
+testing = ["fastapi (>=0.115.0,<0.116.0)", "pyjwt[crypto] (>=2.10.1,<3.0.0)"]
 
 [[package]]
 name = "pluggy"
@@ -1950,4 +1961,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "cead4fe9a62c1ef05b35896fdfb74af215f386aeca981c38ce88e9bfa8b93bb1"
+content-hash = "500b870749fe22461277346f2104298a7163c5f59e107e2500050366aff2dc43"
