@@ -3,8 +3,7 @@ from functools import lru_cache
 from fastapi import HTTPException, status
 
 from app.core.config import AuthProvider, Settings
-from app.infrastructure.security.token_verifiers.cognito_jwt_verifier import CognitoJwtVerifier
-from app.infrastructure.security.token_verifiers.memory_jwt_verifier import MemoryJwtVerifier
+from persistence_kit.security.token_verifiers import CognitoJwtVerifier, MemoryJwtVerifier
 
 
 @lru_cache
