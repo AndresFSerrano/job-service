@@ -14,13 +14,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Ensure tag commit equals origin/main HEAD
+      - name: Ensure tag commit equals origin/develop HEAD
         run: |
-          git fetch origin main
+          git fetch origin develop
           TAG_SHA="${GITHUB_SHA}"
-          MAIN_SHA="$(git rev-parse origin/main)"
-          if [ "$TAG_SHA" != "$MAIN_SHA" ]; then
-            echo "Release tag commit ($TAG_SHA) is not main HEAD ($MAIN_SHA)."
+          DEVELOP_SHA="$(git rev-parse origin/develop)"
+          if [ "$TAG_SHA" != "$DEVELOP_SHA" ]; then
+            echo "Release tag commit ($TAG_SHA) is not develop HEAD ($DEVELOP_SHA)."
             exit 1
           fi
 

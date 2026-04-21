@@ -38,6 +38,7 @@ from app.infrastructure.security.authorization import (
     ensure_principal_can_access_execution,
     ensure_user_can_access_manager_type,
     get_current_user,
+    get_current_user_from_qs,
     get_request_principal,
     require_service_principal,
 )
@@ -200,7 +201,7 @@ async def stream_job_execution(
     job_ref: str,
     request: Request,
     job_execution_repo: JobExecutionRepoDep,
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user_from_qs),
 ):
     execution = await get_job_execution_by_ref_use_case(job_execution_repo, job_ref)
     if execution is None:

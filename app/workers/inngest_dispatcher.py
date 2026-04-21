@@ -155,6 +155,7 @@ class InngestJobDispatcher:
     async def _reconcile_stale_dispatches(self) -> None:
         while True:
             await self._fail_stale_dispatches()
+            await self._fail_expired_executions()
             await asyncio.sleep(self._reconcile_interval_seconds)
 
     async def _fail_stale_dispatches(self) -> None:
@@ -200,6 +201,54 @@ class InngestJobDispatcher:
                         },
                     ),
                 )
+
+    async def _fail_expired_executions(self) -> None:
+        now_dt = parse_iso_datetime(now_bogota_iso())
+        if now_dt is None:
+            return
+        definition_cache: dict[UUID, JobDefinition | None] = {}
+        executions = await self._execution_repo.list_by_fields(
+            {"status": JobExecutionStatus.RUNNING}, limit=200,
+        )
+        for execution in executions:
+            if execution.finished_at:
+                continue
+            definition = await self._get_definition(definition_cache, execution.job_definition_id)
+            if definition is None or definition.execution_engine != "inngest":
+                continue
+            max_seconds = definition.max_execution_seconds or 120
+            started = parse_iso_datetime(execution.started_at)
+            if started is None:
+                continue
+            if started + timedelta(seconds=max_seconds) > now_dt:
+                continue
+            elapsed = int((now_dt - started).total_seconds())
+            await update_job_execution_use_case(
+                self._execution_repo,
+                execution.id,
+                JobExecutionUpdate(
+                    status=JobExecutionStatus.FAILED,
+                    error_code="execution_timeout",
+                    error_message=(
+                        f"Ejecucion excedio el tiempo maximo de "
+                        f"{max_seconds}s (transcurridos: {elapsed}s)."
+                    ),
+                ),
+            )
+            await add_job_event(
+                self._event_repo,
+                execution.id,
+                JobEventCreate(
+                    event_type="execution_timeout",
+                    message="Job marcado como fallido por exceder tiempo maximo de ejecucion",
+                    level="error",
+                    data={
+                        "max_execution_seconds": max_seconds,
+                        "elapsed_seconds": elapsed,
+                        "tier": definition.tier,
+                    },
+                ),
+            )
 
     async def _get_definition(
         self,
