@@ -1,0 +1,556 @@
+{
+  "version_id": "v002-add-tier-and-max-execution-seconds",
+  "label": "add-tier-and-max-execution-seconds",
+  "created_at": "2026-04-21T04:26:20.214592+00:00",
+  "project_name": "job-service",
+  "provider_name": "sqlalchemy-postgres",
+  "alembic_revision": "d4c1a20778cd",
+  "review": "Revisión del cambio de esquema para provider 'sqlalchemy-postgres':\n1. [agregar] columna job_definitions.max_execution_seconds\n   Se agregará la columna 'max_execution_seconds' en 'job_definitions' con tipo 'integer' y nullable=False.\n2. [agregar] columna job_definitions.tier\n   Se agregará la columna 'tier' en 'job_definitions' con tipo 'varchar' y nullable=False.\n\nNota: los posibles renombres y las migraciones de datos deben revisarse manualmente antes de aplicar cambios.\n\nFuente del esquema deseado: persistence-kit-registry\n- El source de persistence_kit describe el esquema deseado desde register_entity.\n- Las columnas y tipos se derivan de las tablas SQLAlchemy que persistence_kit construye para cada dataclass.",
+  "diff": {
+    "provider_name": "sqlalchemy-postgres",
+    "changes": [
+      {
+        "change_type": "agregar",
+        "object_type": "columna",
+        "object_name": "job_definitions.max_execution_seconds",
+        "details": "Se agregará la columna 'max_execution_seconds' en 'job_definitions' con tipo 'integer' y nullable=False."
+      },
+      {
+        "change_type": "agregar",
+        "object_type": "columna",
+        "object_name": "job_definitions.tier",
+        "details": "Se agregará la columna 'tier' en 'job_definitions' con tipo 'varchar' y nullable=False."
+      }
+    ]
+  },
+  "desired_snapshot": {
+    "provider_name": "sqlalchemy-postgres",
+    "tables": [
+      {
+        "name": "job_clients",
+        "column_coverage": "full",
+        "source_name": "persistence-kit-registry",
+        "lazy_materialization": true,
+        "notes": [
+          "Columnas y tipos derivados desde build_table_from_dataclass de persistence_kit.",
+          "Los defaults de dataclass no se promueven a server defaults en el esquema deseado.",
+          "La materialización física puede ser lazy hasta el primer uso del repositorio."
+        ],
+        "columns": [
+          {
+            "name": "client_key",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "display_name",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "base_url",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "description",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "status",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "callback_auth_mode",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "healthcheck_url",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "metadata",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "created_at",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "id",
+            "type_name": "uuid",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          }
+        ],
+        "indexes": [
+          {
+            "name": "uniq_client_key_job_clients",
+            "columns": [
+              "client_key"
+            ],
+            "unique": true
+          }
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "job_definitions",
+        "column_coverage": "full",
+        "source_name": "persistence-kit-registry",
+        "lazy_materialization": true,
+        "notes": [
+          "Columnas y tipos derivados desde build_table_from_dataclass de persistence_kit.",
+          "Los defaults de dataclass no se promueven a server defaults en el esquema deseado.",
+          "La materialización física puede ser lazy hasta el primer uso del repositorio."
+        ],
+        "columns": [
+          {
+            "name": "client_key",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "job_key",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "display_name",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "version",
+            "type_name": "integer",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "description",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "payload_schema",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "result_schema",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "visibility_scope",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "retry_policy",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "execution_engine",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "execution_ref",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "active",
+            "type_name": "boolean",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "allow_concurrent",
+            "type_name": "boolean",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "tier",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "max_execution_seconds",
+            "type_name": "integer",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "created_at",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "id",
+            "type_name": "uuid",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          }
+        ],
+        "indexes": [
+          {
+            "name": "uniq_id_job_definitions",
+            "columns": [
+              "id"
+            ],
+            "unique": true
+          },
+          {
+            "name": "uniq_job_key_job_definitions",
+            "columns": [
+              "job_key"
+            ],
+            "unique": true
+          }
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "job_events",
+        "column_coverage": "full",
+        "source_name": "persistence-kit-registry",
+        "lazy_materialization": true,
+        "notes": [
+          "Columnas y tipos derivados desde build_table_from_dataclass de persistence_kit.",
+          "Los defaults de dataclass no se promueven a server defaults en el esquema deseado.",
+          "La materialización física puede ser lazy hasta el primer uso del repositorio."
+        ],
+        "columns": [
+          {
+            "name": "job_execution_id",
+            "type_name": "uuid",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "event_type",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "message",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "data",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "level",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "created_at",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "id",
+            "type_name": "uuid",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          }
+        ],
+        "indexes": [
+          {
+            "name": "uniq_id_job_events",
+            "columns": [
+              "id"
+            ],
+            "unique": true
+          }
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "job_executions",
+        "column_coverage": "full",
+        "source_name": "persistence-kit-registry",
+        "lazy_materialization": true,
+        "notes": [
+          "Columnas y tipos derivados desde build_table_from_dataclass de persistence_kit.",
+          "Los defaults de dataclass no se promueven a server defaults en el esquema deseado.",
+          "La materialización física puede ser lazy hasta el primer uso del repositorio."
+        ],
+        "columns": [
+          {
+            "name": "job_definition_id",
+            "type_name": "uuid",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "client_key",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "job_key",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "payload",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "correlation_id",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "status",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "requested_by_type",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "requested_by_id",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "requested_by_display",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "priority",
+            "type_name": "integer",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "progress_current",
+            "type_name": "integer",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "progress_total",
+            "type_name": "integer",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "progress_label",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "result_summary",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "result",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "error_code",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "error_message",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "worker_id",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "inngest_run_id",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "inngest_run_url",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "queued_at",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "started_at",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "finished_at",
+            "type_name": "varchar",
+            "nullable": true,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "created_at",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "updated_at",
+            "type_name": "varchar",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          },
+          {
+            "name": "id",
+            "type_name": "uuid",
+            "nullable": false,
+            "default": null,
+            "enum_values": []
+          }
+        ],
+        "indexes": [
+          {
+            "name": "uniq_id_job_executions",
+            "columns": [
+              "id"
+            ],
+            "unique": true
+          }
+        ],
+        "foreign_keys": []
+      }
+    ],
+    "enums": [],
+    "source_name": "persistence-kit-registry",
+    "notes": [
+      "El source de persistence_kit describe el esquema deseado desde register_entity.",
+      "Las columnas y tipos se derivan de las tablas SQLAlchemy que persistence_kit construye para cada dataclass."
+    ]
+  }
+}

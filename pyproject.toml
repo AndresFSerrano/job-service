@@ -16,6 +16,8 @@ jsonschema = "^4.25.0"
 httpx = "^0.28.1"
 inngest = { version = "^0.4.22", extras = ["connect"] }
 pyjwt = { version = "^2.10.1", extras = ["crypto"] }
+db-migration-kit = "^1.5.0"
+psycopg = { extras = ["binary"], version = "^3.3.3" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
@@ -28,6 +30,45 @@ test = "poetry run pytest"
 [tool.poe.tasks.install]
 help = "Instala dependencias principales y de desarrollo."
 cmd = "poetry install --with dev"
+
+[tool.poe.tasks.migration-review]
+help = "Muestra en lenguaje legible qué cambios detecta el kit en el esquema."
+cmd = "db-migration-kit review --project-module migration_project"
+
+[tool.poe.tasks.migration-diff]
+help = "Muestra el diff estructurado entre el esquema actual y el deseado."
+cmd = "db-migration-kit diff --project-module migration_project"
+
+[tool.poe.tasks.migration-snapshot]
+help = "Crea un snapshot con el label indicado y genera la revisión de Alembic."
+args = [{ name = "label", positional = true }]
+cmd = "db-migration-kit snapshot-create --project-module migration_project --label ${label}"
+
+[tool.poe.tasks.migration-apply]
+help = "Aplica el snapshot indicado a la base de datos."
+args = [{ name = "version_id", positional = true }]
+cmd = "db-migration-kit snapshot-apply --project-module migration_project --version-id ${version_id}"
+
+[tool.poe.tasks.migration-list]
+help = "Lista todos los snapshots existentes."
+cmd = "db-migration-kit snapshot-list --project-module migration_project"
+
+[tool.poe.tasks.migration-current]
+help = "Muestra la revisión de Alembic actualmente aplicada en la BD."
+cmd = "db-migration-kit current --project-module migration_project"
+
+[tool.poe.tasks.migration-history]
+help = "Muestra el historial de migraciones de Alembic."
+cmd = "db-migration-kit history --project-module migration_project"
+
+[tool.poe.tasks.migration-doctor]
+help = "Valida que el proyecto de migración esté correctamente configurado."
+cmd = "db-migration-kit doctor --project-module migration_project"
+
+[tool.poe.tasks.migration-stamp]
+help = "Sella la BD en una revisión de Alembic sin ejecutar migraciones."
+args = [{ name = "revision", positional = true }]
+cmd = "db-migration-kit stamp --project-module migration_project --revision ${revision}"
 
 [tool.poe.tasks.docker-up]
 help = "Levanta contenedores con -d por defecto; usa --f para foreground/logs."
