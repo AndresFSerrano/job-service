@@ -18,6 +18,8 @@ class JobDefinitionCreate(BaseModel):
     execution_ref: str | None = None
     active: bool = True
     allow_concurrent: bool = True
+    tier: str = "light"
+    max_execution_seconds: int = 120
 
 
 class JobDefinitionOut(JobDefinitionCreate):

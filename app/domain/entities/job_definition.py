@@ -18,5 +18,7 @@ class JobDefinition:
     execution_ref: str | None = None
     active: bool = True
     allow_concurrent: bool = True
+    tier: str = "light"
+    max_execution_seconds: int = 120
     created_at: str = field(default_factory=now_bogota_iso)
     id: UUID = field(default_factory=uuid4)

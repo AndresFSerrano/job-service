@@ -125,6 +125,23 @@ async def get_current_user(
     return principal
 
 
+async def get_current_user_from_qs(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)] = None,
+    token: str | None = None,
+    settings: Settings = Depends(get_settings),
+) -> AuthenticatedUser:
+    if credentials is None and token:
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+    principal = await get_request_principal(credentials, request, settings)
+    if isinstance(principal, ServicePrincipal):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requiere un token de usuario para acceder a este recurso.",
+        )
+    return principal
+
+
 async def require_service_principal(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
     request: Request,

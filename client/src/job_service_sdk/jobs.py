@@ -761,6 +761,8 @@ class JobFlowSpec:
     fn_id: str | None = None
     trigger_event: str | None = None
     retries: int = 0
+    tier: str = "light"
+    max_execution_seconds: int = 120
 
     @property
     def resolved_fn_id(self) -> str:
@@ -784,6 +786,8 @@ def job_flow(
     fn_id: str | None = None,
     trigger_event: str | None = None,
     retries: int = 0,
+    tier: str = "light",
+    max_execution_seconds: int = 120,
 ) -> Callable[[Callable[[], JobFlow]], Callable[[], JobFlow]]:
     def decorator(factory: Callable[[], JobFlow]) -> Callable[[], JobFlow]:
         _registry.append(
@@ -797,6 +801,8 @@ def job_flow(
                 fn_id=fn_id,
                 trigger_event=trigger_event,
                 retries=retries,
+                tier=tier,
+                max_execution_seconds=max_execution_seconds,
             )
         )
         return factory
@@ -826,6 +832,8 @@ def build_job_definition_configs(client_key: str) -> list[JobDefinitionConfig]:
             result_schema=spec.result_schema,
             execution_engine="inngest",
             execution_ref=spec.resolved_trigger_event,
+            tier=spec.tier,
+            max_execution_seconds=spec.max_execution_seconds,
         )
         for spec in get_registered_jobs()
     ]

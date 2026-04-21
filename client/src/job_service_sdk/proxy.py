@@ -149,6 +149,13 @@ def build_job_proxy_router(
         url = f"{base}/api/v1/job-executions/{execution_id}/stream"
         headers = _forward_headers(request)
 
+        auth = headers.get("authorization", "")
+        bearer_token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+        if not bearer_token:
+            bearer_token = request.query_params.get("token", "")
+        if bearer_token:
+            url = f"{url}?token={bearer_token}"
+
         async def _event_generator():
             try:
                 async with _build_stream_client() as stream_client:
