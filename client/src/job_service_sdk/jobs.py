@@ -895,7 +895,6 @@ def build_inngest_functions(
         )
         async def _workflow(
             ctx: Any,
-            step: Any,
             _spec: JobFlowSpec = spec,
         ) -> dict[str, Any]:
             client_instance = get_job_service_client()
@@ -904,7 +903,7 @@ def build_inngest_functions(
             job_metadata = dict(ctx.event.data.get("job_metadata") or {})
             runtime = JobRuntime(
                 ctx=ctx,
-                step=step,
+                step=ctx.step,
                 client=client_instance,
                 job_id=job_id,
                 job_key=_spec.job_key,
