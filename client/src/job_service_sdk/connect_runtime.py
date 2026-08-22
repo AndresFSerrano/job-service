@@ -56,13 +56,13 @@ async def start_inngest_connect_worker_from_settings(
         client=client,
         get_job_service_client=_get_job_service_client,
     )
-    from inngest.experimental.connect import connect
+    from inngest.connect import connect
 
     def build_worker() -> Any:
         return connect(
             [(client, functions)],
             instance_id=getattr(settings, "service_name", app_id),
-            max_concurrency=max_concurrency,
+            max_worker_concurrency=max_concurrency,
         )
 
     worker = build_worker()
