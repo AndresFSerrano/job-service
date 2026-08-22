@@ -2,6 +2,7 @@ from job_service_sdk.client import JobClientConfig, JobDefinitionConfig, JobServ
 from job_service_sdk.connect_runtime import (
     get_inngest_client,
     initialize_inngest_client_from_settings,
+    is_worker_connected,
     start_inngest_connect_worker_from_settings,
     start_job_runtime_from_settings,
     stop_inngest_connect_worker,
@@ -34,6 +35,7 @@ __all__ = [
     "JobRuntime",
     "StepHandler",
     "MapItemHandler",
+    "is_worker_connected",
     "start_inngest_connect_worker_from_settings",
     "start_job_runtime_from_settings",
     "stop_inngest_connect_worker",
