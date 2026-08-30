@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
-from typing import Any
+import logging
+from typing import Any, Callable
 
 import inngest
 
 from job_service_sdk.jobs import build_inngest_functions
 from job_service_sdk.registration import get_job_service_provider
 
+logger = logging.getLogger(__name__)
+
+RECONNECT_DELAY_SECONDS = 5.0
+
 _inngest_clients: dict[str, inngest.Inngest] = {}
 _workers: dict[str, Any] = {}
+_supervisors: dict[str, asyncio.Task] = {}
 
 
 def initialize_inngest_client_from_settings(settings: Any) -> inngest.Inngest:
@@ -49,20 +56,59 @@ async def start_inngest_connect_worker_from_settings(
         client=client,
         get_job_service_client=_get_job_service_client,
     )
-    from inngest.experimental.connect import connect
+    from inngest.connect import connect
 
-    worker = connect(
-        [(client, functions)],
-        instance_id=getattr(settings, "service_name", app_id),
-        max_concurrency=max_concurrency,
-    )
+    def build_worker() -> Any:
+        return connect(
+            [(client, functions)],
+            instance_id=getattr(settings, "service_name", app_id),
+            max_worker_concurrency=max_concurrency,
+        )
+
+    worker = build_worker()
     _workers[app_id] = worker
-    import asyncio
-    asyncio.create_task(worker.start())
+    _supervisors[app_id] = asyncio.create_task(_keep_connected(app_id, worker, build_worker))
     return worker
 
 
+async def _keep_connected(app_id: str, worker: Any, build_worker: Callable[[], Any]) -> None:
+    """Mantiene viva la conexión con Inngest, reconectando si se cae.
+
+    `connect` abre una conexión saliente que puede morir sin avisar. Sin esto,
+    Inngest conserva las funciones registradas y no queda quien las ejecute:
+    los jobs se quedan iniciados para siempre y nadie se entera.
+    """
+    while True:
+        try:
+            await worker.start()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Inngest worker for %s failed, reconnecting", app_id)
+        else:
+            logger.warning("Inngest worker for %s stopped, reconnecting", app_id)
+
+        _workers.pop(app_id, None)
+        await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+        worker = build_worker()
+        _workers[app_id] = worker
+
+
+def is_worker_connected(app_id: str) -> bool:
+    """Si hay un supervisor vivo para esa app, o sea si los jobs se pueden ejecutar."""
+    supervisor = _supervisors.get(app_id)
+    return supervisor is not None and not supervisor.done()
+
+
 async def stop_inngest_connect_worker(app_id: str) -> None:
+    supervisor = _supervisors.pop(app_id, None)
+    if supervisor is not None and not supervisor.done():
+        supervisor.cancel()
+        try:
+            await supervisor
+        except asyncio.CancelledError:
+            pass
+
     worker = _workers.pop(app_id, None)
     if worker is None:
         return

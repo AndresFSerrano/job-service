@@ -134,3 +134,37 @@ def test_request_wraps_http_error():
 
     with pytest.raises(JobServiceError, match="GET /api/v1/job-clients failed"):
         client.list_clients()
+
+
+def test_list_executions_reads_the_paginated_response():
+    """La API responde `{"items": [...]}`; leerlo solo como lista devolvía vacío siempre."""
+    from job_service_sdk.client import JobServiceClient
+
+    class FakeClient(JobServiceClient):
+        def __init__(self):
+            self.pedido = {}
+
+        def _request(self, method, path, params=None, **kwargs):
+            self.pedido = {"method": method, "path": path, "params": params}
+            return {"items": [{"job_key": "k", "status": "completed", "requested_by_type": "schedule"}],
+                    "total": 1, "page": 1, "page_size": 10}
+
+    client = FakeClient()
+    resultado = client.list_executions(job_key="k", requested_by_type="schedule")
+
+    assert len(resultado) == 1
+    assert resultado[0]["job_key"] == "k"
+    assert client.pedido["params"]["requested_by_type"] == "schedule"
+
+
+def test_list_executions_still_reads_a_plain_list():
+    from job_service_sdk.client import JobServiceClient
+
+    class FakeClient(JobServiceClient):
+        def __init__(self):
+            pass
+
+        def _request(self, method, path, params=None, **kwargs):
+            return [{"job_key": "k", "status": "completed"}]
+
+    assert len(FakeClient().list_executions(job_key="k")) == 1

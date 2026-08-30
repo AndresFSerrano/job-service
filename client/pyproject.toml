@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "job-service-sdk"
-version = "2.1.0"
+version = "2.4.1"
 description = "Cliente y runtime para integrarse con job_service"
 authors = ["Andrés <andresfserrano1@gmail.com>"]
 readme = "README.md"
@@ -25,10 +25,10 @@ documentation = "https://github.com/andresfserrano/job-service#readme"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-httpx = "^0.28.1"
+httpx = ">=0.28.1,<1.0.0"
 jsonschema = "^4.25.0"
-inngest = { version = "^0.4.22", extras = ["connect"] }
-fastapi = { version = "^0.115.0", optional = true }
+inngest = { version = ">=0.5.19,<1.0.0", extras = ["connect"] }
+fastapi = { version = ">=0.115.0,<1.0.0", optional = true }
 
 [tool.poetry.extras]
 proxy = ["fastapi"]
@@ -36,7 +36,7 @@ proxy = ["fastapi"]
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.2"
 pytest-asyncio = "^1.2.0"
-fastapi = "^0.115.0"
+fastapi = ">=0.115.0,<1.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

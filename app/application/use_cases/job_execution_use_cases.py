@@ -158,6 +158,7 @@ async def list_job_executions(
     job_key: str | None = None,
     requested_by_id: str | None = None,
     requested_by: str | None = None,
+    requested_by_type: str | None = None,
     statuses: list[str] | None = None,
     page: int = 1,
     page_size: int = 10,
@@ -216,6 +217,14 @@ async def list_job_executions(
             ):
                 matching_executions.append(execution)
         executions = matching_executions
+    if requested_by_type:
+        # Separa lo que lanzo una persona de lo que lanzo el reloj, sin tener que abrir Inngest.
+        normalized_type = requested_by_type.strip().lower()
+        executions = [
+            execution
+            for execution in executions
+            if str(execution.requested_by_type or "user").lower() == normalized_type
+        ]
     if statuses:
         normalized_statuses = {status.lower() for status in statuses}
         executions = [

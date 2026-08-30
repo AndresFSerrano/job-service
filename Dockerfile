@@ -13,6 +13,8 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry install --no-root --only main
 
 COPY app/ ./app/
+COPY migration_project.py run_deploy_migrations.py ./
+COPY migrations/ ./migrations/
 
 EXPOSE 8001
 
