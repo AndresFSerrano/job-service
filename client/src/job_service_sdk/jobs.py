@@ -794,6 +794,7 @@ class JobFlowSpec:
     max_execution_seconds: int = 120
     cron: str | None = None
     cron_input: dict[str, Any] | None = None
+    cron_guard: Callable[[], Awaitable[bool]] | None = None
 
     @property
     def resolved_fn_id(self) -> str:
@@ -825,6 +826,7 @@ def job_flow(
     max_execution_seconds: int = 120,
     cron: str | None = None,
     cron_input: dict[str, Any] | None = None,
+    cron_guard: Callable[[], Awaitable[bool]] | None = None,
 ) -> Callable[[Callable[[], JobFlow]], Callable[[], JobFlow]]:
     def decorator(factory: Callable[[], JobFlow]) -> Callable[[], JobFlow]:
         _registry.append(
@@ -842,6 +844,7 @@ def job_flow(
                 max_execution_seconds=max_execution_seconds,
                 cron=cron,
                 cron_input=cron_input,
+                cron_guard=cron_guard,
             )
         )
         return factory
@@ -1021,8 +1024,11 @@ def _build_cron_function(
     """La función que dispara el reloj solo encola una ejecución, no corre el flujo.
 
     Así la corrida programada nace igual que la que se lanza desde el front: con su fila en el
-    job-service, su progreso y su reporte. Si la ventana de fechas está cerrada, eso lo decide el
-    propio flujo, que es donde se puede auditar.
+    job-service, su progreso y su reporte.
+
+    `cron_guard` decide si toca o no. Va aquí y no adentro del flujo a propósito: un reloj que
+    corre cada hora para una ventana de una hora dejaría veintitrés ejecuciones diarias que no
+    hicieron nada. Lo que se salta queda en el historial de Inngest, no en la lista de corridas.
     """
     import inngest
 
@@ -1034,6 +1040,13 @@ def _build_cron_function(
     )
     async def _scheduled(ctx: Any, _spec: JobFlowSpec = spec) -> dict[str, Any]:
         service = get_job_service_client()
+
+        if _spec.cron_guard is not None:
+            async def check() -> dict[str, Any]:
+                return {"run": bool(await _spec.cron_guard())}  # type: ignore[misc]
+
+            if not (await ctx.step.run(f"toca:{_spec.job_key}", check))["run"]:
+                return {"skipped": True, "job_key": _spec.job_key}
 
         async def enqueue() -> dict[str, Any]:
             execution = await _call_job_service_with_retry(

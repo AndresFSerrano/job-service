@@ -174,6 +174,62 @@ async def test_parallel_does_not_swallow_the_interrupt():
     assert len(step.executed) == len(set(step.executed))
 
 
+@pytest.mark.asyncio
+async def test_cron_only_enqueues_when_the_guard_says_so():
+    """La ventana se evalúa en el disparador: lo que no toca no deja fila en el job-service."""
+    from job_service_sdk.jobs import JobFlowSpec, _build_cron_function
+
+    creadas: list[str] = []
+    abierta = {"valor": False}
+
+    class FakeService:
+        def create_execution(self, job_key, job_input, **kwargs):
+            creadas.append(job_key)
+            return {"id": "abc"}
+
+    class Recorder:
+        def __init__(self):
+            self.functions = []
+
+        def create_function(self, **kwargs):
+            def decorator(fn):
+                self.functions.append((kwargs, fn))
+                return fn
+
+            return decorator
+
+    async def guard() -> bool:
+        return abierta["valor"]
+
+    spec = JobFlowSpec(job_key="k", display_name="K", description="d", flow=JobFlow(),
+                       payload_schema=None, result_schema=None, cron="0 * * * *",
+                       cron_input={"confirm": True}, cron_guard=guard)
+    recorder = Recorder()
+    _build_cron_function(recorder, spec, lambda: FakeService())
+    _kwargs, scheduled = recorder.functions[0]
+
+    step = FakeStep()
+    ctx = FakeCtx()
+    ctx.step = step
+    await drive_call(lambda: scheduled(ctx), step)
+    assert creadas == [], "con la ventana cerrada no se encola nada"
+
+    abierta["valor"] = True
+    step.memo.clear()
+    await drive_call(lambda: scheduled(ctx), step)
+    assert creadas == ["k"], "con la ventana abierta se encola una vez"
+
+
+async def drive_call(call, step, limit=20):
+    for _ in range(limit):
+        try:
+            return await call()
+        except FakeInterrupt as interrupt:
+            for step_id, output in interrupt.responses:
+                step.memo[step_id] = output
+    raise AssertionError("no terminó")
+
+
 def test_cron_registers_a_second_function():
     @job_flow(job_key="prueba_cron", display_name="Prueba", description="x",
               cron="TZ=America/Bogota 0 6 * * *", cron_input={"confirm": True})
