@@ -148,15 +148,24 @@ class JobServiceClient:
         status: str | None = None,
         job_key: str | None = None,
         requested_by_id: str | None = None,
+        requested_by_type: str | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
         params = {
             "job_key": job_key,
             "requested_by_id": requested_by_id,
+            "requested_by_type": requested_by_type,
         }
         params = {key: value for key, value in params.items() if value is not None}
         raw = self._request("GET", "/api/v1/job-executions", params=params or None)
-        executions = raw if isinstance(raw, list) else []
+        # El listado responde paginado, `{"items": [...]}`. Leerlo solo como lista devolvia vacio
+        # siempre, y quien se apoyara en esto para no repetir trabajo lo repetia.
+        if isinstance(raw, dict):
+            executions = raw.get("items") or []
+        elif isinstance(raw, list):
+            executions = raw
+        else:
+            executions = []
         filtered = [
             exec_
             for exec_ in executions

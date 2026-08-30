@@ -148,6 +148,10 @@ async def list_job_executions(
     job_key: str | None = Query(default=None),
     requested_by_id: str | None = Query(default=None),
     requested_by: str | None = Query(default=None),
+    requested_by_type: str | None = Query(
+        default=None,
+        description="Origen de la ejecucion: user para las lanzadas a mano, schedule para las del reloj.",
+    ),
     status: list[str] | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
@@ -162,6 +166,7 @@ async def list_job_executions(
         job_key=job_key,
         requested_by_id=effective_requested_by_id,
         requested_by=requested_by,
+        requested_by_type=requested_by_type,
         statuses=status,
         page=page,
         page_size=page_size,
