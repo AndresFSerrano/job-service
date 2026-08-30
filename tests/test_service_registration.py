@@ -775,3 +775,61 @@ async def test_requester_options_route_returns_403_for_non_admin_user(monkeypatc
         app.dependency_overrides.clear()
 
     assert response.status_code == 403, response.text
+
+
+@pytest.mark.asyncio
+async def test_list_job_executions_filters_by_origin(monkeypatch) -> None:
+    """Separa lo que lanzo una persona de lo que lanzo el reloj, sin abrir Inngest."""
+    monkeypatch.setenv("REPO_DATABASE", "memory")
+
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post(
+            "/api/v1/job-clients/service-registration",
+            json={
+                "client_key": "apistoremanagerv1",
+                "display_name": "API Store Manager",
+                "base_url": "http://api-store:8000",
+                "job_definitions": [
+                    {
+                        "client_key": "ignored",
+                        "job_key": "export_key_status_history",
+                        "display_name": "Exportar historial de llaves a S3",
+                    }
+                ],
+            },
+        )
+
+        await client.post(
+            "/api/v1/job-executions",
+            json={
+                "job_key": "export_key_status_history",
+                "job_input": {},
+                "requested_by_id": "andres.serrano",
+            },
+        )
+        await client.post(
+            "/api/v1/job-executions",
+            json={
+                "job_key": "export_key_status_history",
+                "job_input": {},
+                "requested_by_type": "schedule",
+                "requested_by_display": "Programado",
+            },
+        )
+
+        programadas = await client.get(
+            "/api/v1/job-executions", params={"requested_by_type": "schedule"}
+        )
+        de_personas = await client.get(
+            "/api/v1/job-executions", params={"requested_by_type": "user"}
+        )
+        todas = await client.get("/api/v1/job-executions")
+
+    assert programadas.json()["total"] == 1
+    assert programadas.json()["items"][0]["requested_by_display"] == "Programado"
+    assert de_personas.json()["total"] == 1
+    assert de_personas.json()["items"][0]["requested_by_id"] == "andres.serrano"
+    assert todas.json()["total"] == 2, "sin filtro salen las dos"
