@@ -115,6 +115,25 @@ def build_sample_flow() -> JobFlow:
     return flow
 ```
 
+## Corrida programada
+
+`cron` registra una segunda función de Inngest que solo encola una ejecución con `cron_input`, así
+que la corrida programada nace con su fila en el job-service igual que la que se lanza a mano.
+Cualquier condición para no hacer nada -una ventana de fechas, por ejemplo- va como primer paso del
+flow, que es donde queda auditada.
+
+```python
+@job_flow(
+    job_key="sample_job",
+    display_name="Sample Job",
+    description="Ejemplo con reloj",
+    cron="TZ=America/Bogota 0 6 * * *",
+    cron_input={"confirm": True},
+)
+def build_sample_flow() -> JobFlow:
+    return JobFlow().step("ventana", check_window).step("trabajo", do_work)
+```
+
 ## Worker local
 
 ```python

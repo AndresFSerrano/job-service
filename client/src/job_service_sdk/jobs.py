@@ -63,6 +63,34 @@ class JobRuntime:
     def _scoped_id(self, step_id: str) -> str:
         return f"{self._scope_prefix}:{step_id}" if self._scope_prefix else step_id
 
+    async def run_in_parallel(
+        self,
+        callables: list[Callable[[], Awaitable[Any]]],
+        *,
+        concurrency: int = 0,
+    ) -> list[Any]:
+        """Programa varios pasos a la vez como pasos paralelos de Inngest.
+
+        `asyncio.gather` sobre `step.run` no sirve para esto: cada paso ejecuta su manejador y
+        lanza la interrupción con el resultado, así que la primera se propaga, las demás corrutinas
+        siguen corriendo hasta el final y su trabajo se descarta. En el barrido de MARES eso
+        significó 6190 consultas a la fuente para 1854 pasos. `ctx.group.parallel` descubre los
+        pasos, reporta todas las respuestas juntas y en cada invocación ejecuta solo el paso que
+        toca, de modo que cada manejador corre una vez.
+
+        `concurrency` es el tamaño de la tanda: 0 las programa todas a la vez.
+        """
+        group = getattr(self.ctx, "group", None)
+        if group is None:
+            return [await run() for run in callables]
+
+        size = concurrency if concurrency > 0 else len(callables)
+        results: list[Any] = []
+        for start in range(0, len(callables), max(size, 1)):
+            batch = tuple(callables[start : start + size])
+            results.extend(await group.parallel(batch))
+        return results
+
     async def add_event(
         self,
         event_type: str,
@@ -546,27 +574,33 @@ class ParallelNode(FlowNode):
                 )
             return branch_runtime.state
 
-        results = await asyncio.gather(
-            *[run_branch(i, branch) for i, branch in enumerate(self.branches)],
-            return_exceptions=True,
-        )
+        def branch_call(branch_index: int, branch: JobFlow) -> Callable[[], Awaitable[FlowState]]:
+            async def run() -> FlowState:
+                return await run_branch(branch_index, branch)
 
-        # Recolectar eventos de todas las ramas en el buffer del padre
-        for br in branch_runtimes:
-            runtime._event_buffer.extend(br._event_buffer)
+            return run
 
-        errors = [r for r in results if isinstance(r, Exception)]
-        if errors:
+        try:
+            results = await runtime.run_in_parallel(
+                [branch_call(index, branch) for index, branch in enumerate(self.branches)]
+            )
+        except Exception as error:
+            for br in branch_runtimes:
+                runtime._event_buffer.extend(br._event_buffer)
             await runtime.add_node_event(
                 "parallel_failed",
                 f"Paralelo falló: {self.node_id}",
                 node_id=self.node_id,
                 node_type="parallel",
                 level="error",
-                data={"error": str(errors[0]), "failed_branches": len(errors)},
+                data={"error": str(error)},
             )
             await runtime.flush()
-            raise errors[0]
+            raise
+
+        # Recolectar eventos de todas las ramas en el buffer del padre
+        for br in branch_runtimes:
+            runtime._event_buffer.extend(br._event_buffer)
 
         for result in results:
             if isinstance(result, dict):
@@ -614,26 +648,21 @@ class MapNode(FlowNode):
             data={"items_key": self.items_key, "items_count": len(items)},
         )
 
-        async def process_item(index: int, item: Any) -> Any:
-            return await runtime.step.run(
-                runtime._scoped_id(f"{self.node_id}:{index}"),
-                self.handler,
-                item,
-                runtime.state,
-            )
-
-        if self.concurrency > 0:
-            results: list[Any] = []
-            for batch_start in range(0, len(items), self.concurrency):
-                batch = items[batch_start : batch_start + self.concurrency]
-                batch_results = await asyncio.gather(
-                    *[process_item(batch_start + i, item) for i, item in enumerate(batch)]
+        def process_item(index: int, item: Any) -> Callable[[], Awaitable[Any]]:
+            async def run() -> Any:
+                return await runtime.step.run(
+                    runtime._scoped_id(f"{self.node_id}:{index}"),
+                    self.handler,
+                    item,
+                    runtime.state,
                 )
-                results.extend(batch_results)
-        else:
-            results = list(
-                await asyncio.gather(*[process_item(i, item) for i, item in enumerate(items)])
-            )
+
+            return run
+
+        results = await runtime.run_in_parallel(
+            [process_item(index, item) for index, item in enumerate(items)],
+            concurrency=self.concurrency,
+        )
 
         if self.output_key:
             runtime.state[self.output_key] = results
@@ -763,10 +792,16 @@ class JobFlowSpec:
     retries: int = 0
     tier: str = "light"
     max_execution_seconds: int = 120
+    cron: str | None = None
+    cron_input: dict[str, Any] | None = None
 
     @property
     def resolved_fn_id(self) -> str:
         return self.fn_id or self.job_key.replace("_", "-")
+
+    @property
+    def resolved_cron_fn_id(self) -> str:
+        return f"{self.resolved_fn_id}-cron"
 
     @property
     def resolved_trigger_event(self) -> str:
@@ -788,6 +823,8 @@ def job_flow(
     retries: int = 0,
     tier: str = "light",
     max_execution_seconds: int = 120,
+    cron: str | None = None,
+    cron_input: dict[str, Any] | None = None,
 ) -> Callable[[Callable[[], JobFlow]], Callable[[], JobFlow]]:
     def decorator(factory: Callable[[], JobFlow]) -> Callable[[], JobFlow]:
         _registry.append(
@@ -803,6 +840,8 @@ def job_flow(
                 retries=retries,
                 tier=tier,
                 max_execution_seconds=max_execution_seconds,
+                cron=cron,
+                cron_input=cron_input,
             )
         )
         return factory
@@ -968,4 +1007,44 @@ def build_inngest_functions(
 
         functions.append(_workflow)
 
+        if spec.cron:
+            functions.append(_build_cron_function(client, spec, get_job_service_client))
+
     return functions
+
+
+def _build_cron_function(
+    client: Any,
+    spec: JobFlowSpec,
+    get_job_service_client: Callable[[], JobServiceClient],
+) -> Any:
+    """La función que dispara el reloj solo encola una ejecución, no corre el flujo.
+
+    Así la corrida programada nace igual que la que se lanza desde el front: con su fila en el
+    job-service, su progreso y su reporte. Si la ventana de fechas está cerrada, eso lo decide el
+    propio flujo, que es donde se puede auditar.
+    """
+    import inngest
+
+    @client.create_function(
+        fn_id=spec.resolved_cron_fn_id,
+        name=f"{spec.display_name} (programado)",
+        retries=0,
+        trigger=inngest.TriggerCron(cron=spec.cron or ""),
+    )
+    async def _scheduled(ctx: Any, _spec: JobFlowSpec = spec) -> dict[str, Any]:
+        service = get_job_service_client()
+
+        async def enqueue() -> dict[str, Any]:
+            execution = await _call_job_service_with_retry(
+                service.create_execution,
+                _spec.job_key,
+                dict(_spec.cron_input or {}),
+                requested_by_type="service",
+                requested_by_display="Programado",
+            )
+            return {"job_execution_id": str(execution.get("id"))}
+
+        return await ctx.step.run(f"encolar:{_spec.job_key}", enqueue)
+
+    return _scheduled
