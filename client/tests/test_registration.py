@@ -3,6 +3,8 @@ from uuid import uuid4
 
 import pytest
 
+import job_service_sdk.jobs as jobs_module
+import job_service_sdk.registration as registration_module
 from job_service_sdk.client import JobDefinitionConfig
 from job_service_sdk.registration import (
     _providers,
@@ -65,9 +67,10 @@ def test_bootstrap_job_service_provider_returns_none_when_optional_and_missing_u
 
 def test_initialize_job_service_provider_from_settings_caches_provider(monkeypatch):
     _providers.clear()
-    monkeypatch.setattr("job_service_sdk.registration.importlib.import_module", lambda module: None)
+    monkeypatch.setattr(registration_module, "importlib", SimpleNamespace(import_module=lambda module: None))
     monkeypatch.setattr(
-        "job_service_sdk.registration.build_job_definition_configs",
+        jobs_module,
+        "build_job_definition_configs",
         lambda client_key: [
             JobDefinitionConfig(
                 client_key=client_key,
@@ -75,7 +78,6 @@ def test_initialize_job_service_provider_from_settings_caches_provider(monkeypat
                 display_name="Sample Job",
             )
         ],
-        raising=False,
     )
 
     settings = SimpleNamespace(
