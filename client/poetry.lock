@@ -869,4 +869,4 @@ proxy = ["fastapi"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "7d7b02313fba497a91262048a304eb4f4a4ceeef2facd3497a61bfa4b6c9115e"
+content-hash = "367b2076027a33b6463f29b7202156b2083e71e531232e15d782bfefa79626b7"
