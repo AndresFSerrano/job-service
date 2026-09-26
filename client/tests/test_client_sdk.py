@@ -196,3 +196,43 @@ def test_job_service_client_run_once_discovers_definition_and_completes_executio
 
     assert "GET /api/v1/job-definitions" in seen_paths
     assert f"PATCH /api/v1/job-executions/{execution_id}" in seen_paths
+
+
+def test_job_service_client_discovers_definition_before_creating_execution() -> None:
+    definition_id = uuid4()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/api/v1/job-definitions":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": str(definition_id),
+                        "client_key": "apistoremanagerv1",
+                        "job_key": "sync-products",
+                        "display_name": "Sincronizar productos",
+                        "version": 1,
+                        "active": True,
+                    }
+                ],
+            )
+        if request.method == "POST" and request.url.path == "/api/v1/job-executions":
+            payload = request.read().decode("utf-8")
+            return httpx.Response(201, json={"id": str(uuid4()), "payload_seen": payload})
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    http_client = httpx.Client(
+        base_url="http://job-service.local",
+        transport=httpx.MockTransport(handler),
+        headers={"Content-Type": "application/json"},
+    )
+    client = JobServiceClient("http://job-service.local", http_client=http_client)
+
+    response = client.create_execution(
+        "sync-products",
+        job_input={"page": 1},
+    )
+
+    assert UUID(response["id"])
+    assert '"job_key":"sync-products"' in response["payload_seen"]
+    assert '"job_input":{"page":1}' in response["payload_seen"]
