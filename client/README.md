@@ -176,3 +176,5 @@ await stop_job_runtime_from_settings(settings)
 ```
 
 Hoy el runtime soportado es `inngest`, pero la app consumidora ya no necesita decidir eso directamente.
+
+El supervisor del worker reconecta cuando la conexión con Inngest se cae y también cuando queda muerta sin que inngest lo note. Cada 15 segundos revisa el estado de la conexión y, si la app habla con un Dev Server, le pregunta al servidor por esa conexión en `/v0/gql`. Tras cuatro revisiones fallidas seguidas cierra el worker, arma uno nuevo y deja un `WARNING` en el log. Una revisión sin respuesta del servidor no cuenta. `is_worker_connected(app_id)` responde `True` solo mientras la conexión está activa y el servidor no la ha dado por perdida.
